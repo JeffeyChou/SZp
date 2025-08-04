@@ -28,9 +28,11 @@ float *szp_float_decompress_openmp_threadblock(size_t nbEle, float absErrBound, 
     unsigned char *rcp;
     unsigned int nbThreads = 0;
     
-    size_t threadblocksize = 0;
+    int threadblocksize = 0;
+    int remainder = 0;
     int block_size = blockSize;
-
+    int num_full_block_in_tb = 0;
+    int num_remainder_in_tb = 0;
 #pragma omp parallel
     {
 #pragma omp single
@@ -38,14 +40,13 @@ float *szp_float_decompress_openmp_threadblock(size_t nbEle, float absErrBound, 
             nbThreads = omp_get_num_threads();
             rcp = cmpBytes + nbThreads * sizeof(size_t);
             threadblocksize = nbEle / nbThreads;
+            remainder = nbEle % nbThreads;
+            num_full_block_in_tb = (threadblocksize - 1) / block_size; 
+            num_remainder_in_tb = (threadblocksize - 1) % block_size;
         }
         int tid = omp_get_thread_num();
-        size_t lo = tid * threadblocksize;
-        size_t hi = (tid + 1) * threadblocksize;
-        if (tid == nbThreads - 1) {
-            hi = nbEle; // Ensure the last thread processes all remaining elements
-        }
-
+        int lo = tid * threadblocksize;
+        int hi = (tid + 1) * threadblocksize;
         float *newData_perthread = newData + lo;
         size_t i = 0;
         size_t j = 0;
@@ -54,68 +55,214 @@ float *szp_float_decompress_openmp_threadblock(size_t nbEle, float absErrBound, 
         int current = 0;
         int diff = 0;
 
-        unsigned int bit_count = 0;
-        unsigned char *block_pointer = rcp + offsets[tid];
+        
+        int max = 0;
+        int bit_count = 0;
+        unsigned char *outputBytes_perthread = rcp + offsets[tid]; 
+        unsigned char *block_pointer = outputBytes_perthread;
+        memcpy(&prior, block_pointer, sizeof(int));
+        block_pointer += sizeof(unsigned int);
 
         float ori_prior = 0.0;
         float ori_current = 0.0;
 
-        if (lo < hi) { // Ensure thread has data to process
-            memcpy(&prior, block_pointer, sizeof(int));
-            block_pointer += sizeof(unsigned int);
-
-            ori_prior = (float)prior * absErrBound;
-            memcpy(newData_perthread, &ori_prior, sizeof(float)); 
-            newData_perthread += 1;
-        }
+        ori_prior = (float)prior * absErrBound;
+        memcpy(newData_perthread, &ori_prior, sizeof(float)); 
+        newData_perthread += 1;
         
         unsigned char *temp_sign_arr = (unsigned char *)malloc(blockSize * sizeof(unsigned char));
-        unsigned int *temp_predict_arr = (unsigned int *)malloc(blockSize * sizeof(unsigned int));
-        unsigned int savedbitsbytelength = 0;
         
-        for (i = lo + 1; i < hi; i = i + block_size)
+        unsigned int *temp_predict_arr = (unsigned int *)malloc(blockSize * sizeof(unsigned int));
+        unsigned int signbytelength = 0; 
+        unsigned int savedbitsbytelength = 0;
+        if (num_full_block_in_tb > 0)
         {
-            size_t current_block_size = (i + block_size > hi) ? (hi - i) : block_size;
-            if (current_block_size == 0) continue;
-
-            bit_count = block_pointer[0];
-            block_pointer++;
-            
-            if (bit_count == 0)
+            for (i = lo + 1; i < hi - num_remainder_in_tb; i = i + block_size)
             {
-                ori_prior = (float)prior * absErrBound;
-                
-                for (j = 0; j < current_block_size; j++)
+                bit_count = block_pointer[0];
+                block_pointer++;
+                if (bit_count >= 32)
                 {
-                    memcpy(newData_perthread, &ori_prior, sizeof(float));
-                    newData_perthread++;
+                    printf("In decompression: num_full_block_in_tb i %zu, bit_count %u at thread %d\n", i, bit_count, tid);
+                }
+                
+                if (bit_count == 0)
+                {
+                    ori_prior = (float)prior * absErrBound;
+                    
+                    for (j = 0; j < block_size; j++)
+                    {
+                        memcpy(newData_perthread, &ori_prior, sizeof(float));
+                        newData_perthread++;
+                    }
+                }
+                else
+                {
+                    
+                    convertByteArray2IntArray_fast_1b_args(block_size, block_pointer, (block_size - 1) / 8 + 1, temp_sign_arr);
+                    block_pointer += ((block_size - 1) / 8 + 1);
+
+                    savedbitsbytelength = Jiajun_extract_fixed_length_bits(block_pointer, block_size, temp_predict_arr, bit_count);
+                    block_pointer += savedbitsbytelength;
+                    for (j = 0; j < block_size; j++)
+                    {
+                        if (temp_sign_arr[j] == 0)
+                        {
+                            diff = temp_predict_arr[j];
+                        }
+                        else
+                        {
+                            diff = 0 - temp_predict_arr[j];
+                        }
+                        current = prior + diff;
+                        ori_current = (float)current * absErrBound;
+                        prior = current;
+                        memcpy(newData_perthread, &ori_current, sizeof(float));
+                        newData_perthread++;
+                    }
                 }
             }
-            else
+        }
+        
+        if (num_remainder_in_tb > 0)
+        {
+            for (i = hi - num_remainder_in_tb; i < hi; i = i + block_size)
             {
-                convertByteArray2IntArray_fast_1b_args(current_block_size, block_pointer, (current_block_size - 1) / 8 + 1, temp_sign_arr);
-                block_pointer += ((current_block_size - 1) / 8 + 1);
-
-                savedbitsbytelength = Jiajun_extract_fixed_length_bits(block_pointer, current_block_size, temp_predict_arr, bit_count);
-                block_pointer += savedbitsbytelength;
-                for (j = 0; j < current_block_size; j++)
+                bit_count = block_pointer[0];
+                block_pointer++;
+                if (bit_count == 0)
                 {
-                    if (temp_sign_arr[j] == 0)
+                    ori_prior = (float)prior * absErrBound;
+                    for (j = 0; j < num_remainder_in_tb; j++)
                     {
-                        diff = temp_predict_arr[j];
+                        memcpy(newData_perthread, &ori_prior, sizeof(float));
+                        newData_perthread++;
+                    }
+                }
+                else
+                {
+                    convertByteArray2IntArray_fast_1b_args(num_remainder_in_tb, block_pointer, (num_remainder_in_tb - 1) / 8 + 1, temp_sign_arr);
+                    block_pointer += ((num_remainder_in_tb - 1) / 8 + 1);
+
+                    savedbitsbytelength = Jiajun_extract_fixed_length_bits(block_pointer, num_remainder_in_tb, temp_predict_arr, bit_count);
+                    block_pointer += savedbitsbytelength;
+                    for (j = 0; j < num_remainder_in_tb; j++)
+                    {
+                        if (temp_sign_arr[j] == 0)
+                        {
+                            diff = temp_predict_arr[j];
+                        }
+                        else
+                        {
+                            diff = 0 - temp_predict_arr[j];
+                        }
+                        current = prior + diff;
+                        ori_current = (float)current * absErrBound;
+                        prior = current;
+                        memcpy(newData_perthread, &ori_current, sizeof(float));
+                        newData_perthread++;
+                    }
+                }
+            }
+        }
+
+        
+        if (tid == nbThreads - 1 && remainder != 0)
+        {
+            unsigned int num_full_block_in_rm = (remainder - 1) / block_size; 
+            unsigned int num_remainder_in_rm = (remainder - 1) % block_size;
+            memcpy(&prior, block_pointer, sizeof(int));
+            block_pointer += sizeof(int);
+            ori_prior = (float)prior * absErrBound;
+            memcpy(newData_perthread, &ori_prior, sizeof(float));
+            newData_perthread += 1;
+            if (num_full_block_in_rm > 0)
+            {
+                
+                for (i = hi + 1; i < nbEle - num_remainder_in_rm; i = i + block_size)
+                {
+                    bit_count = block_pointer[0];
+                    block_pointer++;
+                    if (bit_count == 0)
+                    {
+                        ori_prior = (float)prior * absErrBound;
+                        for (j = 0; j < block_size; j++)
+                        {
+                            memcpy(newData_perthread, &ori_prior, sizeof(float));
+                            newData_perthread++;
+                        }
                     }
                     else
                     {
-                        diff = 0 - temp_predict_arr[j];
+                        convertByteArray2IntArray_fast_1b_args(block_size, block_pointer, (block_size - 1) / 8 + 1, temp_sign_arr);
+                        block_pointer += ((block_size - 1) / 8 + 1);
+
+                        savedbitsbytelength = Jiajun_extract_fixed_length_bits(block_pointer, block_size, temp_predict_arr, bit_count);
+                        block_pointer += savedbitsbytelength;
+                        for (j = 0; j < block_size; j++)
+                        {
+                            if (temp_sign_arr[j] == 0)
+                            {
+                                diff = temp_predict_arr[j];
+                            }
+                            else
+                            {
+                                diff = 0 - temp_predict_arr[j];
+                            }
+                            current = prior + diff;
+                            ori_current = (float)current * absErrBound;
+                            prior = current;
+                            memcpy(newData_perthread, &ori_current, sizeof(float));
+                            newData_perthread++;
+                        }
                     }
-                    current = prior + diff;
-                    ori_current = (float)current * absErrBound;
-                    prior = current;
-                    memcpy(newData_perthread, &ori_current, sizeof(float));
-                    newData_perthread++;
+                }
+            }
+            if (num_remainder_in_rm > 0)
+            {
+                
+                for (i = nbEle - num_remainder_in_rm; i < nbEle; i = i + block_size)
+                {
+
+                    bit_count = block_pointer[0];
+                    block_pointer++;
+                    if (bit_count == 0)
+                    {
+                        ori_prior = (float)prior * absErrBound;
+                        for (j = 0; j < num_remainder_in_rm; j++)
+                        {
+                            memcpy(newData_perthread, &ori_prior, sizeof(float));
+                            newData_perthread++;
+                        }
+                    }
+                    else
+                    {
+                        convertByteArray2IntArray_fast_1b_args(num_remainder_in_rm, block_pointer, (num_remainder_in_rm - 1) / 8 + 1, temp_sign_arr);
+                        block_pointer += ((num_remainder_in_rm - 1) / 8 + 1);
+
+                        savedbitsbytelength = Jiajun_extract_fixed_length_bits(block_pointer, num_remainder_in_rm, temp_predict_arr, bit_count);
+                        block_pointer += savedbitsbytelength;
+                        for (j = 0; j < num_remainder_in_rm; j++)
+                        {
+                            if (temp_sign_arr[j] == 0)
+                            {
+                                diff = temp_predict_arr[j];
+                            }
+                            else
+                            {
+                                diff = 0 - temp_predict_arr[j];
+                            }
+                            current = prior + diff;
+                            ori_current = (float)current * absErrBound;
+                            prior = current;
+                            memcpy(newData_perthread, &ori_current, sizeof(float));
+                            newData_perthread++;
+                        }
+                    }
                 }
             }
         }
+#pragma omp barrier
         free(temp_predict_arr);
         free(temp_sign_arr);
     }
@@ -123,9 +270,10 @@ float *szp_float_decompress_openmp_threadblock(size_t nbEle, float absErrBound, 
 
 #else
     printf("Error! OpenMP not supported!\n");
-    return NULL; 
+    return NULL;
 #endif
 }
+
 
 void szp_float_decompress_single_thread_arg(float *newData, size_t nbEle, float absErrBound, int blockSize, unsigned char *cmpBytes)
 {
