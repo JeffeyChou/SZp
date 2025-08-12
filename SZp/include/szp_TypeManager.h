@@ -13,13 +13,13 @@
 namespace szp{
 
 size_t Jiajun_save_fixed_length_bits(unsigned int *unsignintArray, size_t intArrayLength, unsigned char *result, unsigned int bit_count);
-size_t Jiajun_convertUInt2Byte_fast_1b_args(unsigned int *intArray, size_t intArrayLength, unsigned char *result);
-size_t Jiajun_convertUInt2Byte_fast_2b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
-size_t Jiajun_convertUInt2Byte_fast_3b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
-size_t Jiajun_convertUInt2Byte_fast_4b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
-size_t Jiajun_convertUInt2Byte_fast_5b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
-size_t Jiajun_convertUInt2Byte_fast_6b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
-size_t Jiajun_convertUInt2Byte_fast_7b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_1b_args(unsigned char *intArray, size_t intArrayLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_2b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_3b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_4b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_5b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_6b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_7b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result);
 size_t Jiajun_extract_fixed_length_bits(unsigned char *result, size_t intArrayLength, unsigned int *unsignintArray, unsigned int bit_count);
 void Jiajun_convertByte2UInt_fast_1b_args(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
 void Jiajun_convertByte2UInt_fast_2b_args(size_t stepLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
@@ -54,4 +54,3 @@ int getLeftMovingSteps(size_t k, unsigned char resiBitLength);
 }
 
 #endif /* ----- #ifndef _szp_TypeManager_H  ----- */
-
