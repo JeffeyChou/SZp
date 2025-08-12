@@ -27,9 +27,18 @@ size_t Jiajun_save_fixed_length_bits(unsigned int *unsignintArray, size_t intArr
         if(remainder_bit > 0)
         {
             unsigned char* remainder_array = (unsigned char*)malloc(intArrayLength * sizeof(unsigned char));
-            unsigned int mask = (1u << remainder_bit) - 1;
-            for (size_t i = 0; i < intArrayLength; i++) {
-                remainder_array[i] = (unsigned char)(unsignintArray[i] & mask);
+            // For 1, 2, 4 bits, we can pass unmasked values and optimize in the helper.
+            // For 3, 5, 6, 7 bits, the helper logic is complex and requires pre-masked values.
+            if (remainder_bit == 3 || remainder_bit == 5 || remainder_bit == 6 || remainder_bit == 7) {
+                unsigned int mask = (1u << remainder_bit) - 1;
+                for (size_t i = 0; i < intArrayLength; i++) {
+                    remainder_array[i] = (unsigned char)(unsignintArray[i] & mask);
+                }
+            } else {
+                // For 1, 2, 4, just cast. The helpers will handle it.
+                for (size_t i = 0; i < intArrayLength; i++) {
+                    remainder_array[i] = (unsigned char)unsignintArray[i];
+                }
             }
 
             switch (remainder_bit) {
@@ -61,16 +70,31 @@ size_t Jiajun_save_fixed_length_bits(unsigned int *unsignintArray, size_t intArr
     } else { 
         // Optimization: Use a compact byte array for remainder bits, improving cache efficiency.
         unsigned char* remainder_array = (unsigned char*)malloc(intArrayLength * sizeof(unsigned char));
-        unsigned int mask = (1u << remainder_bit) - 1;
         size_t result_idx = 0;
 
-        for (size_t i = 0; i < intArrayLength; i++) {
-            unsigned int val = unsignintArray[i];
-            remainder_array[i] = (unsigned char)(val & mask);
-            unsigned int tmp = val >> remainder_bit;
-            for (unsigned int j = 0; j < byte_count; j++) {
-                result[result_idx++] = (unsigned char)tmp;
-                tmp >>= 8;
+        // For 1, 2, 4 bits, we can pass unmasked values and optimize in the helper.
+        // For 3, 5, 6, 7 bits, the helper logic is complex and requires pre-masked values.
+        if (remainder_bit == 3 || remainder_bit == 5 || remainder_bit == 6 || remainder_bit == 7) {
+            unsigned int mask = (1u << remainder_bit) - 1;
+            for (size_t i = 0; i < intArrayLength; i++) {
+                unsigned int val = unsignintArray[i];
+                remainder_array[i] = (unsigned char)(val & mask);
+                unsigned int tmp = val >> remainder_bit;
+                for (unsigned int j = 0; j < byte_count; j++) {
+                    result[result_idx++] = (unsigned char)tmp;
+                    tmp >>= 8;
+                }
+            }
+        } else {
+            // For 1, 2, 4, just cast. The helpers will handle it.
+            for (size_t i = 0; i < intArrayLength; i++) {
+                unsigned int val = unsignintArray[i];
+                remainder_array[i] = (unsigned char)val;
+                unsigned int tmp = val >> remainder_bit;
+                for (unsigned int j = 0; j < byte_count; j++) {
+                    result[result_idx++] = (unsigned char)tmp;
+                    tmp >>= 8;
+                }
             }
         }
 
@@ -118,81 +142,66 @@ size_t convertInt2Byte_fast_1b_args(unsigned char *intArray, size_t intArrayLeng
 
 size_t Jiajun_convertUInt2Byte_fast_1b_args(unsigned char *intArray, size_t intArrayLength, unsigned char *result)
 {
-	size_t byteLength = 0;
-	size_t i, j;
-	if (intArrayLength % 8 == 0)
-		byteLength = intArrayLength / 8;
-	else
-		byteLength = intArrayLength / 8 + 1;
+	size_t byteLength = (intArrayLength + 7) / 8;
+	size_t i = 0, n = 0;
+    size_t num_octs = intArrayLength / 8;
 
-	size_t n = 0;
-	unsigned int tmp, type;
-	for (i = 0; i < byteLength; i++)
+	for (i = 0; i < num_octs; i++)
 	{
-		tmp = 0;
-		for (j = 0; j < 8 && n < intArrayLength; j++)
-		{
-			type = intArray[n];
-			
-			tmp = (tmp | (type << (7 - j)));
-			n++;
-		}
-		result[i] = (unsigned char)tmp;
+		result[i] = (intArray[n] << 7) |
+                    ((intArray[n+1] & 0x01) << 6) |
+                    ((intArray[n+2] & 0x01) << 5) |
+                    ((intArray[n+3] & 0x01) << 4) |
+                    ((intArray[n+4] & 0x01) << 3) |
+                    ((intArray[n+5] & 0x01) << 2) |
+                    ((intArray[n+6] & 0x01) << 1) |
+                    (intArray[n+7] & 0x01);
+        n += 8;
 	}
+
+    // Handle remainder
+	if (intArrayLength % 8 != 0)
+	{
+		unsigned char tmp = 0;
+        int remaining = intArrayLength % 8;
+        if (remaining > 0) tmp |= intArray[n] << 7;
+        if (remaining > 1) tmp |= (intArray[n+1] & 0x01) << 6;
+        if (remaining > 2) tmp |= (intArray[n+2] & 0x01) << 5;
+        if (remaining > 3) tmp |= (intArray[n+3] & 0x01) << 4;
+        if (remaining > 4) tmp |= (intArray[n+4] & 0x01) << 3;
+        if (remaining > 5) tmp |= (intArray[n+5] & 0x01) << 2;
+        if (remaining > 6) tmp |= (intArray[n+6] & 0x01) << 1;
+		result[num_octs] = tmp;
+	}
+	
 	return byteLength;
 }
 
 size_t Jiajun_convertUInt2Byte_fast_2b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result)
 {
-	register unsigned char tmp = 0;
-	size_t i, byteLength = 0;
-	if (timeStepTypeLength % 4 == 0)
-		byteLength = timeStepTypeLength * 2 / 8;
-	else
-		byteLength = timeStepTypeLength * 2 / 8 + 1;
-	size_t n = 0;
-	if (timeStepTypeLength % 4 == 0)
+	size_t byteLength = (timeStepTypeLength * 2 + 7) / 8;
+	size_t i = 0, n = 0;
+    size_t num_quads = timeStepTypeLength / 4;
+
+	for (i = 0; i < num_quads; i++)
 	{
-		for (i = 0; i < byteLength; i++)
-		{
-			tmp = 0;
-
-			tmp |= timeStepType[n++] << 6;
-			tmp |= timeStepType[n++] << 4;
-			tmp |= timeStepType[n++] << 2;
-			tmp |= timeStepType[n++];
-
-		
-
-			result[i] = tmp;
-		}
-	}
-	else
-	{
-		size_t byteLength_ = byteLength - 1;
-		for (i = 0; i < byteLength_; i++)
-		{
-			tmp = 0;
-
-			tmp |= timeStepType[n++] << 6;
-			tmp |= timeStepType[n++] << 4;
-			tmp |= timeStepType[n++] << 2;
-			tmp |= timeStepType[n++];
-
-		
-
-			result[i] = tmp;
-		}
-		tmp = 0;
-		int mod4 = timeStepTypeLength % 4;
-		for (int j = 0; j < mod4; j++)
-		{
-			unsigned char type = timeStepType[n++];
-			tmp = tmp | type << (6 - (j << 1));
-		}
-		result[i] = tmp;
+		result[i] = (timeStepType[n] << 6) |
+                    ((timeStepType[n+1] & 0x03) << 4) |
+                    ((timeStepType[n+2] & 0x03) << 2) |
+                    (timeStepType[n+3] & 0x03);
+        n += 4;
 	}
 
+    // Handle remainder
+	if (timeStepTypeLength % 4 != 0)
+	{
+		unsigned char tmp = 0;
+        int remaining = timeStepTypeLength % 4;
+        if (remaining > 0) tmp |= timeStepType[n] << 6;
+        if (remaining > 1) tmp |= (timeStepType[n+1] & 0x03) << 4;
+        if (remaining > 2) tmp |= (timeStepType[n+2] & 0x03) << 2;
+		result[num_quads] = tmp;
+	}
 	
 	return byteLength;
 }
@@ -257,22 +266,20 @@ size_t Jiajun_convertUInt2Byte_fast_4b_args(unsigned char *timeStepType, size_t 
 	else
 		byteLength = timeStepTypeLength * 4 / 8 + 1;
 
-	for (n = 0; n < timeStepTypeLength;)
+    size_t num_pairs = timeStepTypeLength / 2;
+	for (i = 0; i < num_pairs; i++)
 	{
-		unsigned char tmp = 0;
-		for (int j = 0; j < 2 && n < timeStepTypeLength; j++)
-		{
-			unsigned int type = timeStepType[n];
-			if (j == 0)
-				tmp = tmp | (type << 4);
-			else 
-				tmp = tmp | type;
-			n++;
-		}
-		(result)[i++] = tmp;
+		result[i] = (timeStepType[n] << 4) | (timeStepType[n+1] & 0x0F);
+        n += 2;
 	}
+
+    if (timeStepTypeLength % 2 != 0) {
+        result[i] = (timeStepType[n] & 0x0F) << 4;
+    }
+
 	return byteLength;
 }
+
 
 size_t Jiajun_convertUInt2Byte_fast_5b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result)
 {
