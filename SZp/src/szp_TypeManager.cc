@@ -12,85 +12,76 @@ namespace szp{
 
 size_t Jiajun_save_fixed_length_bits(unsigned int *unsignintArray, size_t intArrayLength, unsigned char *result, unsigned int bit_count)
 {
+    unsigned int byte_count = bit_count / 8;
+    unsigned int remainder_bit = bit_count % 8;
+    size_t byteLength = 0;
+    size_t byte_offset = byte_count * intArrayLength;
 
-	unsigned int byte_count = 0;
-	unsigned int remainder_bit = 0;
-	size_t i, j;
-	byte_count = bit_count / 8; 
-	remainder_bit = bit_count % 8;
-	size_t byteLength = 0;
-		
-	size_t byte_offset = byte_count * intArrayLength;
-	if (remainder_bit == 0)
-	{
-		byteLength = byte_offset;
-	}
-	else
-	{
-		byteLength = byte_count * intArrayLength + (remainder_bit * intArrayLength - 1) / 8 + 1;
-	}
+    if (remainder_bit == 0) {
+        byteLength = byte_offset;
+    } else {
+        byteLength = byte_count * intArrayLength + (remainder_bit * intArrayLength - 1) / 8 + 1;
+    }
 
-	size_t n = 0;
-	unsigned int tmp;
-	i = 0;
-	if (byte_count > 0)
-	{
-		while (n < intArrayLength)
-		{
-			j = 0;
-			tmp = unsignintArray[n];
-			tmp >>= remainder_bit;
-			while (i < byteLength && j < byte_count)
-			{
-				result[i] = (unsigned char)tmp;
-				i++;
-				tmp >>= 8; // right shift by 8 bits to store the next full byte
-				j++;
-			}
-			n++;
-		}
-	}
-	if (remainder_bit > 0)
-	{
-		if (byte_count > 0)
-		{
-			for (i = 0; i < intArrayLength; i++)
-			{
-				unsignintArray[i] <<= (32 - remainder_bit);
-				unsignintArray[i] >>= (32 - remainder_bit);
-			}
-		}
-		
+    if (byte_count == 0) { // Only remainder bits, no full bytes.
+        // This part is already optimal (one pass), so keep original logic.
+        if(remainder_bit > 0)
+        {
+            switch (remainder_bit) {
+                case 1: Jiajun_convertUInt2Byte_fast_1b_args(unsignintArray, intArrayLength, result); break;
+                case 2: Jiajun_convertUInt2Byte_fast_2b_args(unsignintArray, intArrayLength, result); break;
+                case 3: Jiajun_convertUInt2Byte_fast_3b_args(unsignintArray, intArrayLength, result); break;
+                case 4: Jiajun_convertUInt2Byte_fast_4b_args(unsignintArray, intArrayLength, result); break;
+                case 5: Jiajun_convertUInt2Byte_fast_5b_args(unsignintArray, intArrayLength, result); break;
+                case 6: Jiajun_convertUInt2Byte_fast_6b_args(unsignintArray, intArrayLength, result); break;
+                case 7: Jiajun_convertUInt2Byte_fast_7b_args(unsignintArray, intArrayLength, result); break;
+                default: printf("Error: try to save %d bits\n", remainder_bit);
+            }
+        }
+        return byteLength;
+    }
 
-		switch (remainder_bit)
-		{
-		case 1:
-			Jiajun_convertUInt2Byte_fast_1b_args(unsignintArray, intArrayLength, result + byte_offset);
-			break;
-		case 2:
-			Jiajun_convertUInt2Byte_fast_2b_args(unsignintArray, intArrayLength, result + byte_offset);
-			break;
-		case 3:
-			Jiajun_convertUInt2Byte_fast_3b_args(unsignintArray, intArrayLength, result + byte_offset);
-			break;
-		case 4:
-			Jiajun_convertUInt2Byte_fast_4b_args(unsignintArray, intArrayLength, result + byte_offset);
-			break;
-		case 5:
-			Jiajun_convertUInt2Byte_fast_5b_args(unsignintArray, intArrayLength, result + byte_offset);
-			break;
-		case 6:
-			Jiajun_convertUInt2Byte_fast_6b_args(unsignintArray, intArrayLength, result + byte_offset);
-			break;
-		case 7:
-			Jiajun_convertUInt2Byte_fast_7b_args(unsignintArray, intArrayLength, result + byte_offset);
-			break;
-		default:
-			printf("Error: try to save %d bits\n", remainder_bit);
-		}
-	}
+    // We have full bytes (byte_count > 0).
+    if (remainder_bit == 0) { // Only full bytes
+        size_t n = 0;
+        size_t i = 0;
+        while (n < intArrayLength) {
+            unsigned int tmp = unsignintArray[n];
+            for (unsigned int j = 0; j < byte_count; j++) {
+                result[i++] = (unsigned char)tmp;
+                tmp >>= 8;
+            }
+            n++;
+        }
+    } else { // Both full bytes and remainder bits
+        unsigned int* remainder_array = (unsigned int*)malloc(intArrayLength * sizeof(unsigned int));
+        unsigned int mask = (1u << remainder_bit) - 1;
+        size_t result_idx = 0;
 
-	return byteLength;
+        for (size_t i = 0; i < intArrayLength; i++) {
+            unsigned int val = unsignintArray[i];
+            remainder_array[i] = val & mask;
+            unsigned int tmp = val >> remainder_bit;
+            for (unsigned int j = 0; j < byte_count; j++) {
+                result[result_idx++] = (unsigned char)tmp;
+                tmp >>= 8;
+            }
+        }
+
+        switch (remainder_bit) {
+            case 1: Jiajun_convertUInt2Byte_fast_1b_args(remainder_array, intArrayLength, result + byte_offset); break;
+            case 2: Jiajun_convertUInt2Byte_fast_2b_args(remainder_array, intArrayLength, result + byte_offset); break;
+            case 3: Jiajun_convertUInt2Byte_fast_3b_args(remainder_array, intArrayLength, result + byte_offset); break;
+            case 4: Jiajun_convertUInt2Byte_fast_4b_args(remainder_array, intArrayLength, result + byte_offset); break;
+            case 5: Jiajun_convertUInt2Byte_fast_5b_args(remainder_array, intArrayLength, result + byte_offset); break;
+            case 6: Jiajun_convertUInt2Byte_fast_6b_args(remainder_array, intArrayLength, result + byte_offset); break;
+            case 7: Jiajun_convertUInt2Byte_fast_7b_args(remainder_array, intArrayLength, result + byte_offset); break;
+            default: printf("Error: try to save %d bits\n", remainder_bit);
+        }
+        free(remainder_array);
+    }
+
+    return byteLength;
 }
 
 size_t convertInt2Byte_fast_1b_args(unsigned char *intArray, size_t intArrayLength, unsigned char *result)
@@ -251,43 +242,6 @@ size_t Jiajun_convertUInt2Byte_fast_3b_args(unsigned int *timeStepType, size_t t
 
 	return byteLength;
 }
-
-// size_t Jiajun_convertUInt2Byte_fast_3b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result)
-// {
-//     size_t i = 0, k = 0, byteLength = 0, n = 0;
-//     if (timeStepTypeLength % 8 == 0)
-//         byteLength = timeStepTypeLength * 3 / 8;
-//     else
-//         byteLength = timeStepTypeLength * 3 / 8 + 1;
- 
-//     unsigned char tmp = 0;
-//     for (n = 0; n < timeStepTypeLength; n++)
-//     {
-//         k = n % 8;
-//         // 直接从高位获取3位，而不是清除低位后从最低位获取
-//         unsigned char bits = (timeStepType[n] >> (32 - 3)) & 0x07; // 获取最高3位
-        
-//         switch (k)
-//         {
-//         case 0:
-//             tmp = tmp | (bits << 5);
-//             break;
-//         case 1:
-//             tmp = tmp | (bits << 2);
-//             break;
-//         case 2:
-//             tmp = tmp | (bits >> 1);
-//             (result)[i++] = tmp;
-//             tmp = 0 | (bits << 7);
-//             break;
-//         // ... 其他case类似修改
-//         }
-//     }
-//     if (k != 7) 
-//         (result)[i] = tmp;
- 
-//     return byteLength;
-// }
 
 size_t Jiajun_convertUInt2Byte_fast_4b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result)
 {
