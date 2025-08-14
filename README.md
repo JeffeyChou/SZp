@@ -16,7 +16,8 @@ mkdir install
 
 # Run the configuration script:
 ./configure --prefix=$(pwd)/install --enable-openmp
-
+# Use Clang compiler with optimization flags for better performance:
+# CXX=clang++ CC=clang CXXFLAGS="-O3" CFLAGS="-O3" ./configure --prefix=$(pwd)/install --enable-openmp
 # Compile the SZp using multiple threads:
 make -j
 

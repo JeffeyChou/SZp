@@ -23,92 +23,110 @@ size_t Jiajun_save_fixed_length_bits(unsigned int *unsignintArray, size_t intArr
         byteLength = byte_offset + (remainder_bit * intArrayLength - 1) / 8 + 1;
     }
 
-    if (byte_count == 0) {
-        if(remainder_bit > 0)
-        {
-            unsigned char* remainder_array = (unsigned char*)malloc(intArrayLength * sizeof(unsigned char));
-            // For 1, 2, 4 bits, we can pass unmasked values and optimize in the helper.
-            // For 3, 5, 6, 7 bits, the helper logic is complex and requires pre-masked values.
-            if (remainder_bit == 3 || remainder_bit == 5 || remainder_bit == 6 || remainder_bit == 7) {
-                unsigned int mask = (1u << remainder_bit) - 1;
-                for (size_t i = 0; i < intArrayLength; i++) {
-                    remainder_array[i] = (unsigned char)(unsignintArray[i] & mask);
-                }
-            } else {
-                // For 1, 2, 4, just cast. The helpers will handle it.
-                for (size_t i = 0; i < intArrayLength; i++) {
-                    remainder_array[i] = (unsigned char)unsignintArray[i];
-                }
-            }
+    // Optimized path: single loop, no temporary array for remainders.
+    // This handles both byte_count > 0 and byte_count == 0 cases.
+    size_t main_idx = 0;
+    unsigned char* remainder_result = result + byte_offset;
+    size_t remainder_idx = 0;
+    unsigned char remainder_tmp = 0;
+    unsigned int mask = (1u << remainder_bit) - 1;
 
-            switch (remainder_bit) {
-                case 1: Jiajun_convertUInt2Byte_fast_1b_args(remainder_array, intArrayLength, result); break;
-                case 2: Jiajun_convertUInt2Byte_fast_2b_args(remainder_array, intArrayLength, result); break;
-                case 3: Jiajun_convertUInt2Byte_fast_3b_args(remainder_array, intArrayLength, result); break;
-                case 4: Jiajun_convertUInt2Byte_fast_4b_args(remainder_array, intArrayLength, result); break;
-                case 5: Jiajun_convertUInt2Byte_fast_5b_args(remainder_array, intArrayLength, result); break;
-                case 6: Jiajun_convertUInt2Byte_fast_6b_args(remainder_array, intArrayLength, result); break;
-                case 7: Jiajun_convertUInt2Byte_fast_7b_args(remainder_array, intArrayLength, result); break;
-                default: printf("Error: try to save %d bits\n", remainder_bit);
-            }
-            free(remainder_array);
-        }
-        return byteLength;
-    }
-
-    if (remainder_bit == 0) {
-        size_t n = 0;
-        size_t i = 0;
-        while (n < intArrayLength) {
-            unsigned int tmp = unsignintArray[n];
-            for (unsigned int j = 0; j < byte_count; j++) {
-                result[i++] = (unsigned char)tmp;
-                tmp >>= 8;
-            }
-            n++;
-        }
-    } else { 
-        // Optimization: Use a compact byte array for remainder bits, improving cache efficiency.
-        unsigned char* remainder_array = (unsigned char*)malloc(intArrayLength * sizeof(unsigned char));
-        size_t result_idx = 0;
-
-        // For 1, 2, 4 bits, we can pass unmasked values and optimize in the helper.
-        // For 3, 5, 6, 7 bits, the helper logic is complex and requires pre-masked values.
-        if (remainder_bit == 3 || remainder_bit == 5 || remainder_bit == 6 || remainder_bit == 7) {
-            unsigned int mask = (1u << remainder_bit) - 1;
-            for (size_t i = 0; i < intArrayLength; i++) {
-                unsigned int val = unsignintArray[i];
-                remainder_array[i] = (unsigned char)(val & mask);
-                unsigned int tmp = val >> remainder_bit;
-                for (unsigned int j = 0; j < byte_count; j++) {
-                    result[result_idx++] = (unsigned char)tmp;
-                    tmp >>= 8;
-                }
-            }
-        } else {
-            // For 1, 2, 4, just cast. The helpers will handle it.
-            for (size_t i = 0; i < intArrayLength; i++) {
-                unsigned int val = unsignintArray[i];
-                remainder_array[i] = (unsigned char)val;
-                unsigned int tmp = val >> remainder_bit;
-                for (unsigned int j = 0; j < byte_count; j++) {
-                    result[result_idx++] = (unsigned char)tmp;
-                    tmp >>= 8;
-                }
-            }
+    for (size_t i = 0; i < intArrayLength; i++) {
+        unsigned int val = unsignintArray[i];
+        
+        // Write the full byte part
+        unsigned int tmp_bytes = val >> remainder_bit;
+        for (unsigned int j = 0; j < byte_count; j++) {
+            result[main_idx++] = (unsigned char)tmp_bytes;
+            tmp_bytes >>= 8;
         }
 
-        switch (remainder_bit) {
-            case 1: Jiajun_convertUInt2Byte_fast_1b_args(remainder_array, intArrayLength, result + byte_offset); break;
-            case 2: Jiajun_convertUInt2Byte_fast_2b_args(remainder_array, intArrayLength, result + byte_offset); break;
-            case 3: Jiajun_convertUInt2Byte_fast_3b_args(remainder_array, intArrayLength, result + byte_offset); break;
-            case 4: Jiajun_convertUInt2Byte_fast_4b_args(remainder_array, intArrayLength, result + byte_offset); break;
-            case 5: Jiajun_convertUInt2Byte_fast_5b_args(remainder_array, intArrayLength, result + byte_offset); break;
-            case 6: Jiajun_convertUInt2Byte_fast_6b_args(remainder_array, intArrayLength, result + byte_offset); break;
-            case 7: Jiajun_convertUInt2Byte_fast_7b_args(remainder_array, intArrayLength, result + byte_offset); break;
-            default: printf("Error: try to save %d bits\n", remainder_bit);
+        // Pack the remainder bits directly
+        unsigned int remainder_val = val & mask;
+        size_t k;
+        switch(remainder_bit) {
+            case 1:
+                k = i % 8;
+                if (k == 0) remainder_tmp = 0;
+                remainder_tmp |= (remainder_val << (7 - k));
+                if (k == 7 || i == intArrayLength - 1) {
+                    remainder_result[remainder_idx++] = remainder_tmp;
+                }
+                break;
+            case 2:
+                k = i % 4;
+                if (k == 0) remainder_tmp = 0;
+                remainder_tmp |= (remainder_val << (6 - k*2));
+                 if (k == 3 || i == intArrayLength - 1) {
+                    remainder_result[remainder_idx++] = remainder_tmp;
+                }
+                break;
+            case 3:
+                k = i % 8;
+                switch(k) {
+                    case 0: remainder_tmp = (unsigned char)(remainder_val << 5); break;
+                    case 1: remainder_tmp |= (unsigned char)(remainder_val << 2); break;
+                    case 2: remainder_tmp |= (unsigned char)(remainder_val >> 1); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 7); break;
+                    case 3: remainder_tmp |= (unsigned char)(remainder_val << 4); break;
+                    case 4: remainder_tmp |= (unsigned char)(remainder_val << 1); break;
+                    case 5: remainder_tmp |= (unsigned char)(remainder_val >> 2); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 6); break;
+                    case 6: remainder_tmp |= (unsigned char)(remainder_val << 3); break;
+                    case 7: remainder_tmp |= (unsigned char)(remainder_val << 0); remainder_result[remainder_idx++] = remainder_tmp; break;
+                }
+                if (i == intArrayLength - 1 && k != 7) remainder_result[remainder_idx++] = remainder_tmp;
+                break;
+            case 4:
+                k = i % 2;
+                if (k == 0) {
+                    remainder_tmp = (unsigned char)(remainder_val << 4);
+                } else {
+                    remainder_tmp |= (unsigned char)remainder_val;
+                    remainder_result[remainder_idx++] = remainder_tmp;
+                }
+                if (i == intArrayLength - 1 && k == 0) remainder_result[remainder_idx++] = remainder_tmp;
+                break;
+            case 5:
+                k = i % 8;
+                switch(k) {
+                    case 0: remainder_tmp = (unsigned char)(remainder_val << 3); break;
+                    case 1: remainder_tmp |= (unsigned char)(remainder_val >> 2); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 6); break;
+                    case 2: remainder_tmp |= (unsigned char)(remainder_val << 1); break;
+                    case 3: remainder_tmp |= (unsigned char)(remainder_val >> 4); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 4); break;
+                    case 4: remainder_tmp |= (unsigned char)(remainder_val >> 1); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 7); break;
+                    case 5: remainder_tmp |= (unsigned char)(remainder_val << 2); break;
+                    case 6: remainder_tmp |= (unsigned char)(remainder_val >> 3); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 5); break;
+                    case 7: remainder_tmp |= (unsigned char)(remainder_val << 0); remainder_result[remainder_idx++] = remainder_tmp; break;
+                }
+                if (i == intArrayLength - 1 && k != 7) remainder_result[remainder_idx++] = remainder_tmp;
+                break;
+            case 6:
+                k = i % 4;
+                 switch(k) {
+                    case 0: remainder_tmp = (unsigned char)(remainder_val << 2); break;
+                    case 1: remainder_tmp |= (unsigned char)(remainder_val >> 4); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 4); break;
+                    case 2: remainder_tmp |= (unsigned char)(remainder_val >> 2); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 6); break;
+                    case 3: remainder_tmp |= (unsigned char)(remainder_val << 0); remainder_result[remainder_idx++] = remainder_tmp; break;
+                }
+                if (i == intArrayLength - 1 && k != 3) remainder_result[remainder_idx++] = remainder_tmp;
+                break;
+            case 7:
+                k = i % 8;
+                switch(k) {
+                    case 0: remainder_tmp = (unsigned char)(remainder_val << 1); break;
+                    case 1: remainder_tmp |= (unsigned char)(remainder_val >> 6); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 2); break;
+                    case 2: remainder_tmp |= (unsigned char)(remainder_val >> 5); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 3); break;
+                    case 3: remainder_tmp |= (unsigned char)(remainder_val >> 4); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 4); break;
+                    case 4: remainder_tmp |= (unsigned char)(remainder_val >> 3); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 5); break;
+                    case 5: remainder_tmp |= (unsigned char)(remainder_val >> 2); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 6); break;
+                    case 6: remainder_tmp |= (unsigned char)(remainder_val >> 1); remainder_result[remainder_idx++] = remainder_tmp; remainder_tmp = (unsigned char)(remainder_val << 7); break;
+                    case 7: remainder_tmp |= (unsigned char)(remainder_val << 0); remainder_result[remainder_idx++] = remainder_tmp; break;
+                }
+                if (i == intArrayLength - 1 && k != 7) remainder_result[remainder_idx++] = remainder_tmp;
+                break;
+            default:
+                // This case is for remainder_bit == 0, which is a no-op.
+                break;
         }
-        free(remainder_array);
     }
 
     return byteLength;
@@ -1004,7 +1022,7 @@ void convertByteArray2IntArray_fast_1b(size_t intArrayLength, unsigned char *byt
 
 inline size_t convertIntArray2ByteArray_fast_2b_args(unsigned char *timeStepType, size_t timeStepTypeLength, unsigned char *result)
 {
-	register unsigned char tmp = 0;
+	unsigned char tmp = 0;
 	size_t i, byteLength = 0;
 	if (timeStepTypeLength % 4 == 0)
 		byteLength = timeStepTypeLength * 2 / 8;
