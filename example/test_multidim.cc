@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <numeric>
 
+#define ACCESS_PATTERN SZP_NONRANDOMACCESS
 // --- Utility Functions ---
 
 double totalCost = 0;
@@ -211,7 +212,7 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < warmupRuns + repetitions; ++i) {
             size_t compressed_size;
             cost_start();
-            unsigned char* bytes = szp_compress(SZP_RANDOMACCESS, sz_datatype, data, &compressed_size, ABS, err_bound, 0, num_elements, block_size);
+            unsigned char* bytes = szp_compress(ACCESS_PATTERN, sz_datatype, data, &compressed_size, ABS, err_bound, 0, num_elements, block_size);
             cost_end();
 
             if (i < warmupRuns) {
@@ -258,7 +259,7 @@ int main(int argc, char *argv[]) {
         std::vector<DecompResult> results;
         for (int i = 0; i < warmupRuns + repetitions; ++i) {
             cost_start();
-            void* dec_data = szp_decompress(SZP_RANDOMACCESS, sz_datatype, bytes, compressed_size, num_elements, block_size);
+            void* dec_data = szp_decompress(ACCESS_PATTERN, sz_datatype, bytes, compressed_size, num_elements, block_size);
             cost_end();
 
             if (i < warmupRuns) {
