@@ -168,11 +168,11 @@ szp_float_openmp_threadblock(float *oriData, size_t *outSize, float absErrBound,
 
     unsigned int nbThreads = 0;
     double inver_bound = 0;
-    unsigned int threadblocksize = 0;
+    size_t threadblocksize = 0;
+    size_t remainder = 0;
+    size_t num_full_block_in_tb = 0;
+    size_t num_remainder_in_tb = 0;
     unsigned int block_size = blockSize;
-    unsigned int remainder = 0;
-    unsigned int num_full_block_in_tb = 0;
-    unsigned int num_remainder_in_tb = 0;
 
 #pragma omp parallel
     {
@@ -194,16 +194,17 @@ szp_float_openmp_threadblock(float *oriData, size_t *outSize, float absErrBound,
         }
         size_t i = 0;
         size_t j = 0;
-        size_t k = 0;
+
         unsigned char *outputBytes_perthread = (unsigned char *)malloc(maxPreservedBufferSize_perthread);
         size_t outSize_perthread = 0;
         
         int tid = omp_get_thread_num();
-        int lo = tid * threadblocksize;
-        int hi = (tid + 1) * threadblocksize;
+        size_t lo = (size_t)tid * threadblocksize;
+        size_t hi = lo + threadblocksize;
 
         int prior = 0;
         int current = 0;
+        
         int diff = 0;
         unsigned int max = 0;
         unsigned int bit_count = 0;

@@ -28,11 +28,11 @@ float *szp_float_decompress_openmp_threadblock(size_t nbEle, float absErrBound, 
     unsigned char *rcp;
     unsigned int nbThreads = 0;
     
-    int threadblocksize = 0;
-    int remainder = 0;
-    int block_size = blockSize;
-    int num_full_block_in_tb = 0;
-    int num_remainder_in_tb = 0;
+    size_t threadblocksize = 0;
+    size_t remainder = 0;
+    size_t block_size = blockSize;
+    size_t num_full_block_in_tb = 0;
+    size_t num_remainder_in_tb = 0;
 #pragma omp parallel
     {
 #pragma omp single
@@ -45,8 +45,8 @@ float *szp_float_decompress_openmp_threadblock(size_t nbEle, float absErrBound, 
             num_remainder_in_tb = (threadblocksize - 1) % block_size;
         }
         int tid = omp_get_thread_num();
-        int lo = tid * threadblocksize;
-        int hi = (tid + 1) * threadblocksize;
+        size_t lo = tid * threadblocksize;
+        size_t hi = (tid + 1) * threadblocksize;
         float *newData_perthread = newData + lo;
         size_t i = 0;
         size_t j = 0;
