@@ -8,9 +8,9 @@ AC_CONFIG_SRCDIR([SZp/include/szp.h])
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
-# : ${CFLAGS=-ggdb -O0 -std=c99 -Wall}
-: ${CFLAGS=-O3 -std=c99 -Wall}
-: ${CPPFLAGS=-O3 -Wall}
+# : ${CFLAGS=-ggdb -O0 -std=c99 -Wall -ftree-vectorize}
+: ${CFLAGS=-O3 -std=c99 -Wall -ftree-vectorize}
+: ${CPPFLAGS=-O3 -Wall -ftree-vectorize}
 
 m4_include([m4/ax_openmp.m4])
 AX_OPENMP
