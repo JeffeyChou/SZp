@@ -24,6 +24,15 @@ make -j
 make install
 
 ```
+### Configuration Options
+The following options are available for configuring the SZp build:
+--prefix=DIR: install in DIR [default=/usr/local].
+--enable-openmp: enables OpenMP support (default disabled).
+--disable-openmp: disables OpenMP support.
+--enable-vectorization: enables vectorization with -ftree-vectorize -funroll-loops for both C and C++.(default enabled)
+--disable-vectorization: disables vectorization with -fno-tree-vectorize for both C and C++.
+--enable-vec-report: enables vectorization report with -fopt-info-vec for both C and C++.(default disabled)
+--disable-vec-report: disables vectorization report with -fno-opt-info-vec for both C and C++.
 
 ## Run SZp
 ```bash

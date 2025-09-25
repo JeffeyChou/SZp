@@ -9,8 +9,36 @@ AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
 # : ${CFLAGS=-ggdb -O0 -std=c99 -Wall}
-: ${CFLAGS=-O3 -std=c99 -Wall}
-: ${CPPFLAGS=-O3 -Wall}
+: ${CFLAGS="-O3 -std=c99 -Wall"}
+: ${CPPFLAGS="-O3 -Wall"}
+: ${CXXFLAGS="-g -O3 -Wall"}
+
+## conditional debug vectorization reports
+AC_ARG_ENABLE([vec-report],
+              [AS_HELP_STRING([--enable-vec-report],
+                              [Enable compiler vectorization reports])],
+              [if test "x$enable_vec_report" = "xyes"; then
+                   CFLAGS="$CFLAGS -fopt-info-vec"
+                   CXXFLAGS="$CXXFLAGS -fopt-info-vec"
+               fi])
+
+## conditional vectorization
+AC_ARG_ENABLE([vectorization],
+              [AS_HELP_STRING([--enable-vectorization],
+                              [Enable compiler auto-vectorization (default=yes)])],
+              [enable_vectorization=$enableval],
+              [enable_vectorization=yes])
+
+if test "x$enable_vectorization" = "xyes"; then
+    CFLAGS="$CFLAGS -march=native -ftree-vectorize -funroll-loops"
+    CPPFLAGS="$CPPFLAGS -march=native -ftree-vectorize -funroll-loops"
+    CXXFLAGS="$CXXFLAGS -march=native -ftree-vectorize -funroll-loops"
+else
+    CFLAGS="$CFLAGS"
+    CPPFLAGS="$CPPFLAGS"
+    CXXFLAGS="$CXXFLAGS"
+fi
+
 
 m4_include([m4/ax_openmp.m4])
 AX_OPENMP

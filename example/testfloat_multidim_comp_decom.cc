@@ -46,6 +46,46 @@ struct DecompResult {
     double compressionRatio;
 };
 
+
+int calculateTrimmedStats(std::vector<double>& data, double& mean, double& stddev) {
+    if (data.empty()) {
+        mean = 0.0;
+        stddev = 0.0;
+        return 0;
+    }
+
+    std::sort(data.begin(), data.end());
+
+    // Determine the number of outliers to trim (10% from top, 10% from bottom)
+    int outliers_to_trim = static_cast<int>(data.size() * 0.1);
+    int start_idx = outliers_to_trim;
+    int end_idx = data.size() - 1 - outliers_to_trim;
+    int valid_reps = end_idx - start_idx + 1;
+
+    if (valid_reps <= 0) {
+        // Not enough data to trim, fall back to calculating over the whole set or return 0
+        mean = std::accumulate(data.begin(), data.end(), 0.0) / data.size();
+        double sq_sum = std::inner_product(data.begin(), data.end(), data.begin(), 0.0);
+        stddev = (data.size() > 1) ? sqrt((sq_sum - data.size() * mean * mean) / (data.size() - 1)) : 0.0;
+        return 0; // Indicate that trimming was not performed
+    }
+
+    double sum = 0.0;
+    for (int i = start_idx; i <= end_idx; ++i) {
+        sum += data[i];
+    }
+    mean = sum / valid_reps;
+
+    double sum_sq_diff = 0.0;
+    for (int i = start_idx; i <= end_idx; ++i) {
+        sum_sq_diff += (data[i] - mean) * (data[i] - mean);
+    }
+    stddev = (valid_reps > 1) ? sqrt(sum_sq_diff / (valid_reps - 1)) : 0.0;
+
+    return valid_reps;
+}
+
+
 // --- Compression Statistics ---
 void writeCompToCsv(const char* filename, const std::vector<CompResult>& results) {
     FILE* fp = fopen(filename, "w");
@@ -64,19 +104,22 @@ void calculateCompStats(const std::vector<CompResult>& results) {
         times.push_back(res.timeCost);
         crs.push_back(res.compressionRatio);
     }
-    
-    double timeAvg = std::accumulate(times.begin(), times.end(), 0.0) / times.size();
-    double crAvg = std::accumulate(crs.begin(), crs.end(), 0.0) / crs.size();
-    
-    double timeStdDev = 0.0;
-    for(const auto& t : times) timeStdDev += (t - timeAvg) * (t - timeAvg);
-    timeStdDev = sqrt(timeStdDev / times.size());
 
-    double crStdDev = 0.0;
-    for(const auto& cr : crs) crStdDev += (cr - crAvg) * (cr - crAvg);
-    crStdDev = sqrt(crStdDev / crs.size());
+    double timeAvg, timeStdDev, crAvg, crStdDev;
+    int valid_reps = calculateTrimmedStats(times, timeAvg, timeStdDev);
+    calculateTrimmedStats(crs, crAvg, crStdDev); // CRs are also sorted and trimmed
+
+    int outliers_to_trim = static_cast<int>(results.size() * 0.1);
 
     printf("\n======= Compression Performance (over %zu runs) =======\n", results.size());
+    if (valid_reps > 0) {
+        printf("Note: Excluding %d slowest and %d fastest runs from statistics (%d/%zu runs used).\n",
+               outliers_to_trim, outliers_to_trim, valid_reps, results.size());
+    } else {
+        printf("Warning: Not enough runs to trim outliers, using all %zu runs for statistics.\n", results.size());
+    }
+
+    
     printf("Time (s):   Avg=%.6f, StdDev=%.6f\n", timeAvg, timeStdDev);
     printf("Comp Ratio: Avg=%.2f, StdDev=%.2f\n", crAvg, crStdDev);
     printf("======================================================\n");
@@ -102,18 +145,20 @@ void calculateDecompStats(const std::vector<DecompResult>& results) {
         psnrs.push_back(res.psnr);
     }
 
-    double timeAvg = std::accumulate(times.begin(), times.end(), 0.0) / times.size();
-    double psnrAvg = std::accumulate(psnrs.begin(), psnrs.end(), 0.0) / psnrs.size();
+    double timeAvg, timeStdDev, psnrAvg, psnrStdDev;
+    int valid_reps = calculateTrimmedStats(times, timeAvg, timeStdDev);
+    calculateTrimmedStats(psnrs, psnrAvg, psnrStdDev); // PSNRs are also sorted and trimmed
 
-    double timeStdDev = 0.0;
-    for(const auto& t : times) timeStdDev += (t - timeAvg) * (t - timeAvg);
-    timeStdDev = sqrt(timeStdDev / times.size());
-
-    double psnrStdDev = 0.0;
-    for(const auto& p : psnrs) psnrStdDev += (p - psnrAvg) * (p - psnrAvg);
-    psnrStdDev = sqrt(psnrStdDev / psnrs.size());
-
+    int outliers_to_trim = static_cast<int>(results.size() * 0.1);
+    
     printf("\n======= Decompression Performance (over %zu runs) =======\n", results.size());
+    if (valid_reps > 0) {
+        printf("Note: Excluding %d slowest and %d fastest runs from statistics (%d/%zu runs used).\n",
+               outliers_to_trim, outliers_to_trim, valid_reps, results.size());
+    } else {
+        printf("Warning: Not enough runs to trim outliers, using all %zu runs for statistics.\n", results.size());
+    }
+
     printf("Time (s): Avg=%.6f, StdDev=%.6f\n", timeAvg, timeStdDev);
     printf("PSNR:     Avg=%.4f, StdDev=%.4f\n", psnrAvg, psnrStdDev);
     printf("=========================================================\n");
@@ -230,7 +275,7 @@ int main(int argc, char *argv[]) {
             free(bytes);
         }
         free(data);
-        if (results.size() > 1) calculateCompStats(results);
+        if (results.size() > 0) calculateCompStats(results);
         if (csvFilePath[0]) writeCompToCsv(csvFilePath, results);
     }
 
@@ -280,7 +325,7 @@ int main(int argc, char *argv[]) {
         }
         free(bytes);
         free(ori_data);
-        if (results.size() > 1) calculateDecompStats(results);
+        if (results.size() > 0) calculateDecompStats(results);
         if (csvFilePath[0]) writeDecompToCsv(csvFilePath, results);
     }
 

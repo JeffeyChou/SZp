@@ -1,6 +1,7 @@
 build-*
 *.log
 Makefile
+Makefile.in
 *.o
 *.lo
 *.so
@@ -9,3 +10,4 @@ Makefile
 .dirstamp
 libszp.la
 install
+ltmain.sh
