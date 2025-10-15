@@ -15,29 +15,48 @@ AC_CONFIG_HEADERS([config.h])
 
 ## conditional debug vectorization reports
 AC_ARG_ENABLE([vec-report],
-              [AS_HELP_STRING([--enable-vec-report],
-                              [Enable compiler vectorization reports])],
-              [if test "x$enable_vec_report" = "xyes"; then
-                   CFLAGS="$CFLAGS -fopt-info-vec"
-                   CXXFLAGS="$CXXFLAGS -fopt-info-vec"
-               fi])
+        [AS_HELP_STRING([--enable-vec-report],
+                [Enable compiler vectorization reports (default=false)])],
+        [if test "x$enable_vec_report" = "xyes"; then
+           CFLAGS="$CFLAGS -fopt-info-vec"
+           CXXFLAGS="$CXXFLAGS -fopt-info-vec"
+         fi])
 
 ## conditional vectorization
 AC_ARG_ENABLE([vectorization],
-              [AS_HELP_STRING([--enable-vectorization],
-                              [Enable compiler auto-vectorization (default=yes)])],
-              [enable_vectorization=$enableval],
-              [enable_vectorization=yes])
+        [AS_HELP_STRING([--enable-vectorization],
+                [Enable compiler auto-vectorization (default=yes)])],
+        [enable_vectorization=$enableval],
+        [enable_vectorization=yes])
 
 if test "x$enable_vectorization" = "xyes"; then
-    CFLAGS="$CFLAGS -march=native -ftree-vectorize -funroll-loops"
-    CPPFLAGS="$CPPFLAGS -march=native -ftree-vectorize -funroll-loops"
-    CXXFLAGS="$CXXFLAGS -march=native -ftree-vectorize -funroll-loops"
+  CFLAGS="$CFLAGS -march=native -ftree-vectorize -funroll-loops"
+  CPPFLAGS="$CPPFLAGS -march=native -ftree-vectorize -funroll-loops"
+  CXXFLAGS="$CXXFLAGS -march=native -ftree-vectorize -funroll-loops"
 else
-    CFLAGS="$CFLAGS"
-    CPPFLAGS="$CPPFLAGS"
-    CXXFLAGS="$CXXFLAGS"
+  CFLAGS="$CFLAGS"
+  CPPFLAGS="$CPPFLAGS"
+  CXXFLAGS="$CXXFLAGS"
 fi
+
+## conditional flags for AVX2 SIMD
+AC_ARG_ENABLE([avx2],
+  [AS_HELP_STRING([--enable-avx2], [Enable AVX2 code generation (-mavx2)])],
+  [enable_avx2=$enableval],
+  [enable_avx2=no])
+AC_MSG_CHECKING([whether to enable AVX2])
+AC_MSG_RESULT([$enable_avx2])
+
+AM_CONDITIONAL([AVX2], [test "x$enable_avx2" = "xyes"])
+
+AVX2_FLAGS=""
+if test "x$enable_avx2" = "xyes"; then
+  AVX2_FLAGS="-mavx2"
+  CFLAGS="$CFLAGS $AVX2_FLAGS"
+  CPPFLAGS="$CPPFLAGS $AVX2_FLAGS"
+  CXXFLAGS="$CXXFLAGS $AVX2_FLAGS"
+fi
+AC_SUBST([AVX2_FLAGS])
 
 
 m4_include([m4/ax_openmp.m4])

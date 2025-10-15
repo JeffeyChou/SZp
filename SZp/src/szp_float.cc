@@ -479,6 +479,176 @@ void szp_float_openmp_threadblock_arg(unsigned char *output, float *oriData, siz
 #endif
 }
 
+static size_t szp_float_block_compiler_buffer(
+    unsigned char *__restrict__ block_pointer, const float *__restrict__ op,
+    double inver_bound, size_t current_block_size, int *__restrict__ prior,
+    unsigned char *__restrict__ temp_sign_arr,
+    unsigned int *__restrict__ temp_predict_arr,
+    int *__restrict__ temp_quant_arr)
+{
+    unsigned char *start_block_pointer = block_pointer;
+    unsigned int bit_count = 0;
+
+    // 1. Quantize (vectorizable)
+    for (size_t j = 0; j < current_block_size; j++) {
+        temp_quant_arr[j] = (int)(op[j] * inver_bound);
+    }
+
+    // 2. Compute differences (vectorizable except for first element)
+    int *temp_int_predict_arr = reinterpret_cast<int *>(temp_predict_arr);
+    temp_int_predict_arr[0] = temp_quant_arr[0] - *prior;
+    for (size_t j = 1; j < current_block_size; j++) {
+        temp_int_predict_arr[j] = temp_quant_arr[j] - temp_quant_arr[j - 1];
+    }
+
+    // 3. Compute sign, abs, and max (vectorizable)
+    int max = 0;
+    for (size_t j = 0; j < current_block_size; j++) {
+        int diff = temp_int_predict_arr[j];
+        temp_sign_arr[j] = diff < 0 ? 1 : 0;
+        diff = abs(diff);
+        temp_int_predict_arr[j] = diff;
+        max = (diff > max) ? diff : max;
+    }
+
+    // Update prior for the next block in the calling loop
+    *prior = temp_quant_arr[current_block_size - 1];
+
+    if (max == 0) {
+        block_pointer[0] = 0;
+        block_pointer++;
+    } else {
+#if defined(__GNUC__) || defined(__clang__)
+        bit_count = sizeof(unsigned int) * 8 - __builtin_clz(max);
+#else
+        bit_count = (unsigned int)(log2f(max)) + 1;
+#endif
+        block_pointer[0] = bit_count;
+        block_pointer++;
+
+        unsigned int signbytelength = convertIntArray2ByteArray_fast_1b_args(
+            temp_sign_arr, current_block_size, block_pointer);
+        block_pointer += signbytelength;
+
+        unsigned int savedbitsbytelength = Jiajun_save_fixed_length_bits(
+            temp_predict_arr, current_block_size, block_pointer, bit_count);
+        block_pointer += savedbitsbytelength;
+    }
+
+    return block_pointer - start_block_pointer;
+}
+
+
+void szp_float_openmp_threadblock_arg_buffer(unsigned char *output, float *oriData, size_t *outSize, float absErrBound,
+                                      size_t nbEle, int blockSize)
+{
+#ifdef _OPENMP
+    const float *op = oriData;
+    size_t maxPreservedBufferSize_perthread = 0;
+    unsigned char *real_outputBytes;
+    size_t *outSize_perthread_arr;
+    size_t *offsets_perthread_arr;
+
+    unsigned char* outputBytes = output + sizeof(float);
+    floatToBytes(output, absErrBound);
+
+    (*outSize) = 0;
+
+    unsigned int nbThreads = 0;
+    double inver_bound = 0;
+    size_t threadblocksize = 0;
+    unsigned int block_size = blockSize;
+
+#pragma omp parallel
+    {
+#pragma omp single
+        {
+            nbThreads = omp_get_num_threads();
+            real_outputBytes = outputBytes + nbThreads * sizeof(size_t);
+            (*outSize) += nbThreads * sizeof(size_t);
+            outSize_perthread_arr = (size_t *)malloc(nbThreads * sizeof(size_t));
+            offsets_perthread_arr = (size_t *)malloc(nbThreads * sizeof(size_t));
+
+            inver_bound = 1 / absErrBound;
+            threadblocksize = (nbEle + nbThreads - 1) / nbThreads;
+        }
+
+        int tid = omp_get_thread_num();
+        size_t lo = tid * threadblocksize;
+        size_t hi = (tid + 1) * threadblocksize;
+        if (hi > nbEle) {
+            hi = nbEle;
+        }
+        
+        maxPreservedBufferSize_perthread = sizeof(float) * (hi-lo) + block_size; // A safe upper bound
+        unsigned char *outputBytes_perthread = (unsigned char *)malloc(maxPreservedBufferSize_perthread);
+        size_t outSize_perthread = 0;
+        unsigned char *block_pointer = outputBytes_perthread;
+        
+        if (lo < hi) {
+            // Pre-allocate buffers for the worker function
+            unsigned char *temp_sign_arr = (unsigned char *)malloc(block_size * sizeof(unsigned char));
+            unsigned int *temp_predict_arr = (unsigned int *)malloc(block_size * sizeof(unsigned int));
+            int *temp_quant_arr = (int *)malloc(block_size * sizeof(int));
+
+            // Initialize prior for this thread\'s chunk
+            int prior = (op[lo]) * inver_bound;
+            memcpy(block_pointer, &prior, sizeof(int));
+            block_pointer += sizeof(unsigned int);
+            outSize_perthread += sizeof(unsigned int);
+
+            // Process the chunk in adaptive blocks
+            for (size_t i = lo + 1; i < hi; i = i + block_size)
+            {
+                size_t current_block_size = (i + block_size > hi) ? (hi - i) : block_size;
+                if (current_block_size == 0) continue;
+
+                size_t compressed_block_size = szp_float_block_compiler_buffer(
+                    block_pointer, op + i, inver_bound, current_block_size, &prior,
+                    temp_sign_arr, temp_predict_arr, temp_quant_arr
+                );
+                
+                block_pointer += compressed_block_size;
+                outSize_perthread += compressed_block_size;
+            }
+
+            free(temp_sign_arr);
+            free(temp_predict_arr);
+            free(temp_quant_arr);
+        }
+
+        outSize_perthread_arr[tid] = outSize_perthread;
+#pragma omp barrier
+
+#pragma omp single
+        {
+            offsets_perthread_arr[0] = 0;
+            for (size_t i = 1; i < nbThreads; i++)
+            {
+                offsets_perthread_arr[i] = offsets_perthread_arr[i - 1] + outSize_perthread_arr[i - 1];
+            }
+            (*outSize) += offsets_perthread_arr[nbThreads - 1] + outSize_perthread_arr[nbThreads - 1];
+            memcpy(outputBytes, offsets_perthread_arr, nbThreads * sizeof(size_t));
+        }
+#pragma omp barrier
+        if (lo < hi) {
+            memcpy(real_outputBytes + offsets_perthread_arr[tid], outputBytes_perthread, outSize_perthread);
+        }
+        free(outputBytes_perthread);
+
+#pragma omp barrier
+#pragma omp single
+        {
+            free(outSize_perthread_arr);
+            free(offsets_perthread_arr);
+        }
+    }
+    (*outSize) += sizeof(float);
+#else
+    printf("Error! OpenMP not supported!\n");
+#endif
+}
+
 void szp_float_single_thread_arg(unsigned char *output, float *oriData, size_t *outSize, float absErrBound,
                                  size_t nbEle, int blockSize)
 {
@@ -604,7 +774,145 @@ void szp_float_single_thread_arg(unsigned char *output, float *oriData, size_t *
     (*outSize) += sizeof(float);
 }
 
-size_t szp_float_single_thread_arg_record(unsigned char *output, float *oriData, size_t *outSize, float absErrBound,
+// unsigned char *temp_sign_arr =
+//         (unsigned char *)malloc(block_size * sizeof(unsigned char));
+// unsigned int *temp_predict_arr =
+//         (unsigned int *)malloc(block_size * sizeof(unsigned int));
+size_t szp_float_single_thread_arg_buffer(
+    unsigned char *__restrict__ output, const float *__restrict__ oriData,
+    float absErrBound, size_t nbEle, unsigned char *__restrict__ temp_sign_arr,
+    unsigned int *__restrict__ temp_predict_arr,
+    int *__restrict__ temp_quant_arr)
+{
+
+    const float *__restrict__ op = oriData;
+    size_t outSize = 0;
+
+    floatToBytes(output, absErrBound);
+    outSize += sizeof(float);
+
+    double inver_bound = 1 / absErrBound;
+    unsigned int block_size = static_cast<unsigned int>(nbEle);
+
+    size_t lo = 0;
+    size_t hi = nbEle;
+
+    int prior = 0;
+    unsigned int bit_count = 0;
+    unsigned char *outputBytes = output + sizeof(float);
+    memcpy(outputBytes, &lo, sizeof(size_t));
+    outSize += sizeof(size_t);
+    unsigned char *block_pointer = outputBytes + sizeof(size_t);
+
+    if (lo < hi) {
+        prior = (op[lo]) * inver_bound;
+        memcpy(block_pointer, &prior, sizeof(int));
+        block_pointer += sizeof(unsigned int);
+        outSize += sizeof(unsigned int);
+    }
+
+    unsigned int signbytelength = 0;
+    unsigned int savedbitsbytelength = 0;
+
+    for (size_t i = lo + 1; i < hi; i = i + block_size) {
+        size_t current_block_size =
+            (i + block_size > hi) ? (hi - i) : block_size;
+        if (current_block_size == 0)
+            continue;
+
+        // 1. Quantize (vectorizable)
+        for (size_t j = 0; j < current_block_size; j++) {
+            temp_quant_arr[j] = (int)(op[i + j] * inver_bound);
+        }
+
+#ifdef SZP_DEBUG
+        printf("temp_quant_arr: ");
+        for (size_t j = 0; j < current_block_size; j++) {
+            printf("%d ", temp_quant_arr[j]);
+        }
+        printf("\n");
+#endif // SZP_DEBUG
+
+        // 2. Compute differences (vectorizable except for first element)
+        int *temp_int_predict_arr = reinterpret_cast<int *>(temp_predict_arr);
+        temp_int_predict_arr[0] = temp_quant_arr[0] - prior;
+        for (size_t j = 1; j < current_block_size; j++) {
+            temp_int_predict_arr[j] = temp_quant_arr[j] - temp_quant_arr[j - 1];
+        }
+
+#ifdef SZP_DEBUG
+        printf("temp_int_predict_arr: ");
+        for (size_t j = 0; j < current_block_size; j++) {
+            printf("%d ", temp_int_predict_arr[j]);
+        }
+        printf("\n");
+#endif // SZP_DEBUG
+
+        // 3. Compute sign, abs, and max (vectorizable)
+        int max = 0;
+        for (size_t j = 0; j < current_block_size; j++) {
+            int diff = temp_int_predict_arr[j];
+            temp_sign_arr[j] = diff < 0 ? 1 : 0;
+            diff = abs(diff);
+            temp_int_predict_arr[j] = diff;
+            max = (diff > max) ? diff : max;
+        }
+#ifdef SZP_DEBUG
+        printf("temp_int_predict_arr (abs): ");
+        for (size_t j = 0; j < current_block_size; j++) {
+            printf("%d ", temp_int_predict_arr[j]);
+        }
+        printf("\n");
+        printf("max: %d\n", max);
+#endif // SZP_DEBUG
+
+        // Update prior for next block
+        prior = temp_quant_arr[current_block_size - 1];
+        if (max == 0) {
+            block_pointer[0] = 0;
+            block_pointer++;
+            outSize++;
+        } else {
+            // Use __builtin_clz for efficient bit count calculation if
+            // available, fall back to log2f otherwise
+#if defined(__GNUC__) || defined(__clang__)
+            bit_count = sizeof(unsigned int) * 8 - __builtin_clz(max);
+#else
+            bit_count = (unsigned int)(log2f(max)) + 1;
+#endif
+#ifdef SZP_DEBUG
+            printf("bit_count: %d\n", bit_count);
+#endif // SZP_DEBUG
+            block_pointer[0] = bit_count;
+#ifdef SZP_DEBUG
+            printf("block_pointer[0]: %d\n", block_pointer[0]);
+#endif // SZP_DEBUG
+
+            outSize++;
+            block_pointer++;
+            signbytelength = convertIntArray2ByteArray_fast_1b_args(
+                temp_sign_arr, current_block_size, block_pointer);
+            block_pointer += signbytelength;
+            outSize += signbytelength;
+
+            savedbitsbytelength = Jiajun_save_fixed_length_bits(
+                temp_predict_arr, current_block_size, block_pointer, bit_count);
+
+            block_pointer += savedbitsbytelength;
+            outSize += savedbitsbytelength;
+        }
+    }
+#ifdef SZP_DEBUG
+    for (size_t i = 0; i < 32; i++) {
+        printf("output[%zu]: %02x\n", i, output[i]);
+    }
+#endif
+
+    return outSize;
+}
+
+size_t szp_float_single_thread_arg_record(unsigned char *output, float *oriData,
+                                          size_t *outSize, float absErrBound,
                                        size_t nbEle, int blockSize)
 {
 

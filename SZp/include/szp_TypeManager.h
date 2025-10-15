@@ -20,6 +20,7 @@ size_t Jiajun_convertUInt2Byte_fast_4b_args(unsigned int *timeStepType, size_t t
 size_t Jiajun_convertUInt2Byte_fast_5b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
 size_t Jiajun_convertUInt2Byte_fast_6b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
 size_t Jiajun_convertUInt2Byte_fast_7b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+
 size_t Jiajun_extract_fixed_length_bits(unsigned char *result, size_t intArrayLength, unsigned int *unsignintArray, unsigned int bit_count);
 void Jiajun_convertByte2UInt_fast_1b_args(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
 void Jiajun_convertByte2UInt_fast_2b_args(size_t stepLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
@@ -29,6 +30,22 @@ void Jiajun_convertByte2UInt_fast_5b_args(size_t stepLength, unsigned char *byte
 void Jiajun_convertByte2UInt_fast_6b_args(size_t stepLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
 void Jiajun_convertByte2UInt_fast_7b_args(size_t stepLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
 
+// AVX2 versions of the functions
+size_t Jiajun_convertUInt2Byte_fast_1b_args_avx2(unsigned int *intArray, size_t intArrayLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_2b_args_avx2(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_3b_args_avx2(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_4b_args_avx2(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_5b_args_avx2(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_6b_args_avx2(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+size_t Jiajun_convertUInt2Byte_fast_7b_args_avx2(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result);
+
+void Jiajun_convertByte2UInt_fast_1b_args_avx2(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
+void Jiajun_convertByte2UInt_fast_2b_args_avx2(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
+void Jiajun_convertByte2UInt_fast_3b_args_avx2(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
+void Jiajun_convertByte2UInt_fast_4b_args_avx2(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
+void Jiajun_convertByte2UInt_fast_5b_args_avx2(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
+void Jiajun_convertByte2UInt_fast_6b_args_avx2(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
+void Jiajun_convertByte2UInt_fast_7b_args_avx2(size_t intArrayLength, unsigned char *byteArray, size_t byteArrayLength, unsigned int *intArray);
 
 
 size_t convertIntArray2ByteArray_fast_1b_args(unsigned char* intArray, size_t intArrayLength, unsigned char *result);

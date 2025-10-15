@@ -322,4 +322,4 @@ int main(int argc, char *argv[]) {
     printf("Benchmark complete.\n");
     return 0;
 }
-// ./example/test_chunk_benchmark /anvil/projects/x-cis240192/x-jzhou28/data/igb_datasets/tiny/processed/paper/node_feat.npy 3e-3 -r 50 -w 10
+// ./example/test_chunk_benchmark /anvil/projects/x-cis240192/x-jzhou28/data/SDRBENCH-EXASKY-NYX-512x512x512/velocity_x.f32  3e-3 512 64 -r 50 -w 10

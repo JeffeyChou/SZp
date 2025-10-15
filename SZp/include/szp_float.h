@@ -33,6 +33,22 @@ szp_float_openmp_threadblock(float *oriData, size_t *outSize, float absErrBound,
 void szp_float_openmp_threadblock_arg(unsigned char *output, float *oriData, size_t *outSize, float absErrBound,
                                       size_t nbEle, int blockSize);
 
+size_t szp_float_single_thread_arg_buffer(
+    unsigned char *__restrict__ output, const float *__restrict__ oriData,
+    float absErrBound, size_t nbEle, unsigned char *__restrict__ temp_sign_arr,
+    unsigned int *__restrict__ temp_predict_arr,
+    int *__restrict__ temp_quant_arr);
+
+static size_t szp_float_block_compiler_buffer(
+    unsigned char *__restrict__ block_pointer, const float *__restrict__ op,
+    double inver_bound, size_t current_block_size, int *__restrict__ prior,
+    unsigned char *__restrict__ temp_sign_arr,
+    unsigned int *__restrict__ temp_predict_arr,
+    int *__restrict__ temp_quant_arr);
+
+void szp_float_openmp_threadblock_arg_buffer(unsigned char *output, float *oriData, size_t *outSize, float absErrBound,
+                                      size_t nbEle, int blockSize);
+
 void szp_float_single_thread_arg(unsigned char *output, float *oriData, size_t *outSize, float absErrBound,
                                  size_t nbEle, int blockSize);
 

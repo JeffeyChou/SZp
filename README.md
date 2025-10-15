@@ -17,6 +17,9 @@ mkdir install
 # Run the configuration script:
 ./configure --prefix=$(pwd)/install --enable-openmp
 
+#Run the configuration script with additional flags that enables vectorization:
+./configure --prefix=$(pwd)/install --enable-openmp --enable-vectorization --enable-avx2
+
 # Compile the SZp using multiple threads:
 make -j
 
@@ -33,6 +36,7 @@ The following options are available for configuring the SZp build:
 --disable-vectorization: disables vectorization with -fno-tree-vectorize for both C and C++.
 --enable-vec-report: enables vectorization report with -fopt-info-vec for both C and C++.(default disabled)
 --disable-vec-report: disables vectorization report with -fno-opt-info-vec for both C and C++.
+--enable-avx2: enables AVX2 optimizations with -mavx2 for both C and C++.(default disabled)
 
 ## Run SZp
 ```bash

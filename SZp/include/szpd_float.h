@@ -20,9 +20,29 @@ extern "C" {
 
 float *szp_float_decompress_openmp_threadblock(size_t nbEle, float absErrBound, int blockSize, unsigned char *cmpBytes);
 
-void szp_float_decompress_openmp_threadblock_arg(float *newData, size_t nbEle, float absErrBound, int blockSize, unsigned char *cmpBytes);
+void szp_float_decompress_openmp_threadblock_arg(float *newData, size_t nbEle, float absErrBound, int blockSize,
+                                                 unsigned char *cmpBytes);
 
-void szp_float_decompress_single_thread_arg(float *newData, size_t nbEle, float absErrBound, int blockSize, unsigned char *cmpBytes);
+
+void szp_float_decompress_single_thread_arg_buffer(
+float *__restrict__ newData, size_t nbEle, float absErrBound,
+    const unsigned char *__restrict__ cmpBytes,
+    unsigned char *__restrict__ temp_sign_arr,
+    unsigned int *__restrict__ temp_predict_arr);
+
+static size_t szp_float_decompress_block_compiler_buffer(
+    const unsigned char *__restrict__ block_pointer,
+    float *__restrict__ newData_perthread, size_t current_block_size,
+    float absErrBound, int *__restrict__ prior,
+    unsigned char *__restrict__ temp_sign_arr,
+    unsigned int *__restrict__ temp_predict_arr);
+
+void szp_float_decompress_openmp_threadblock_arg_buffer(
+    float *newData, size_t nbEle, float absErrBound, int blockSize,
+    const unsigned char *cmpBytes);
+
+void szp_float_decompress_single_thread_arg(float *newData, size_t nbEle,
+                                            float absErrBound, int blockSize, unsigned char *cmpBytes);
 
 size_t szp_float_decompress_single_thread_arg_record(float *newData, size_t nbEle, float absErrBound, int blockSize, unsigned char *cmpBytes);
 
