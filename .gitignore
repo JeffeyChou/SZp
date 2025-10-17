@@ -11,3 +11,4 @@ Makefile.in
 libszp.la
 install
 ltmain.sh
+GEMINI.md
