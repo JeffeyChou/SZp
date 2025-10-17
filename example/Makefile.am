@@ -6,7 +6,7 @@ if OPENMP
 AM_CXXFLAGS+=-fopenmp
 endif
 
-bin_PROGRAMS=testfloat_compress_fastmode1 testfloat_decompress_fastmode1 testfloat_multidim_comp_decom  testfloat_OMPThread_SIMD_optimized testfloat_singleThread_SIMD_optimized
+bin_PROGRAMS=testfloat_compress_fastmode1 testfloat_decompress_fastmode1 testfloat_multidim_comp_decom  testfloat_OMPThread_SIMD_optimized testfloat_singleThread_SIMD_optimized test_profiling
 
 testfloat_compress_fastmode1_SOURCES=testfloat_compress_fastmode1.cc
 testfloat_compress_fastmode1_LDADD=../SZp/.libs/libszp.a -lm
@@ -22,3 +22,6 @@ testfloat_OMPThread_SIMD_optimized_LDADD=../SZp/.libs/libszp.a -lm
 
 testfloat_singleThread_SIMD_optimized_SOURCES=testfloat_singleThread_SIMD_optimized.cc
 testfloat_singleThread_SIMD_optimized_LDADD=../SZp/.libs/libszp.a -lm
+
+test_profiling_SOURCES=test_profiling.cc
+test_profiling_LDADD=../SZp/.libs/libszp.a -lm

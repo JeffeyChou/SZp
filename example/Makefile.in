@@ -93,7 +93,8 @@ bin_PROGRAMS = testfloat_compress_fastmode1$(EXEEXT) \
 	testfloat_decompress_fastmode1$(EXEEXT) \
 	testfloat_multidim_comp_decom$(EXEEXT) \
 	testfloat_OMPThread_SIMD_optimized$(EXEEXT) \
-	testfloat_singleThread_SIMD_optimized$(EXEEXT)
+	testfloat_singleThread_SIMD_optimized$(EXEEXT) \
+	test_profiling$(EXEEXT)
 subdir = example
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_openmp.m4 \
@@ -107,16 +108,19 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
+am_test_profiling_OBJECTS = test_profiling.$(OBJEXT)
+test_profiling_OBJECTS = $(am_test_profiling_OBJECTS)
+test_profiling_DEPENDENCIES = ../SZp/.libs/libszp.a
+AM_V_lt = $(am__v_lt_@AM_V@)
+am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+am__v_lt_0 = --silent
+am__v_lt_1 = 
 am_testfloat_OMPThread_SIMD_optimized_OBJECTS =  \
 	testfloat_OMPThread_SIMD_optimized.$(OBJEXT)
 testfloat_OMPThread_SIMD_optimized_OBJECTS =  \
 	$(am_testfloat_OMPThread_SIMD_optimized_OBJECTS)
 testfloat_OMPThread_SIMD_optimized_DEPENDENCIES =  \
 	../SZp/.libs/libszp.a
-AM_V_lt = $(am__v_lt_@AM_V@)
-am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
-am__v_lt_0 = --silent
-am__v_lt_1 = 
 am_testfloat_compress_fastmode1_OBJECTS =  \
 	testfloat_compress_fastmode1.$(OBJEXT)
 testfloat_compress_fastmode1_OBJECTS =  \
@@ -153,7 +157,7 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade =  \
+am__depfiles_remade = ./$(DEPDIR)/test_profiling.Po \
 	./$(DEPDIR)/testfloat_OMPThread_SIMD_optimized.Po \
 	./$(DEPDIR)/testfloat_compress_fastmode1.Po \
 	./$(DEPDIR)/testfloat_decompress_fastmode1.Po \
@@ -178,12 +182,14 @@ AM_V_CXXLD = $(am__v_CXXLD_@AM_V@)
 am__v_CXXLD_ = $(am__v_CXXLD_@AM_DEFAULT_V@)
 am__v_CXXLD_0 = @echo "  CXXLD   " $@;
 am__v_CXXLD_1 = 
-SOURCES = $(testfloat_OMPThread_SIMD_optimized_SOURCES) \
+SOURCES = $(test_profiling_SOURCES) \
+	$(testfloat_OMPThread_SIMD_optimized_SOURCES) \
 	$(testfloat_compress_fastmode1_SOURCES) \
 	$(testfloat_decompress_fastmode1_SOURCES) \
 	$(testfloat_multidim_comp_decom_SOURCES) \
 	$(testfloat_singleThread_SIMD_optimized_SOURCES)
-DIST_SOURCES = $(testfloat_OMPThread_SIMD_optimized_SOURCES) \
+DIST_SOURCES = $(test_profiling_SOURCES) \
+	$(testfloat_OMPThread_SIMD_optimized_SOURCES) \
 	$(testfloat_compress_fastmode1_SOURCES) \
 	$(testfloat_decompress_fastmode1_SOURCES) \
 	$(testfloat_multidim_comp_decom_SOURCES) \
@@ -358,6 +364,8 @@ testfloat_OMPThread_SIMD_optimized_SOURCES = testfloat_OMPThread_SIMD_optimized.
 testfloat_OMPThread_SIMD_optimized_LDADD = ../SZp/.libs/libszp.a -lm
 testfloat_singleThread_SIMD_optimized_SOURCES = testfloat_singleThread_SIMD_optimized.cc
 testfloat_singleThread_SIMD_optimized_LDADD = ../SZp/.libs/libszp.a -lm
+test_profiling_SOURCES = test_profiling.cc
+test_profiling_LDADD = ../SZp/.libs/libszp.a -lm
 all: all-am
 
 .SUFFIXES:
@@ -441,6 +449,10 @@ clean-binPROGRAMS:
 	echo " rm -f" $$list; \
 	rm -f $$list
 
+test_profiling$(EXEEXT): $(test_profiling_OBJECTS) $(test_profiling_DEPENDENCIES) $(EXTRA_test_profiling_DEPENDENCIES) 
+	@rm -f test_profiling$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(test_profiling_OBJECTS) $(test_profiling_LDADD) $(LIBS)
+
 testfloat_OMPThread_SIMD_optimized$(EXEEXT): $(testfloat_OMPThread_SIMD_optimized_OBJECTS) $(testfloat_OMPThread_SIMD_optimized_DEPENDENCIES) $(EXTRA_testfloat_OMPThread_SIMD_optimized_DEPENDENCIES) 
 	@rm -f testfloat_OMPThread_SIMD_optimized$(EXEEXT)
 	$(AM_V_CXXLD)$(CXXLINK) $(testfloat_OMPThread_SIMD_optimized_OBJECTS) $(testfloat_OMPThread_SIMD_optimized_LDADD) $(LIBS)
@@ -467,6 +479,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_profiling.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testfloat_OMPThread_SIMD_optimized.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testfloat_compress_fastmode1.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/testfloat_decompress_fastmode1.Po@am__quote@ # am--include-marker
@@ -635,7 +648,8 @@ clean: clean-am
 clean-am: clean-binPROGRAMS clean-generic clean-libtool mostlyclean-am
 
 distclean: distclean-am
-		-rm -f ./$(DEPDIR)/testfloat_OMPThread_SIMD_optimized.Po
+		-rm -f ./$(DEPDIR)/test_profiling.Po
+	-rm -f ./$(DEPDIR)/testfloat_OMPThread_SIMD_optimized.Po
 	-rm -f ./$(DEPDIR)/testfloat_compress_fastmode1.Po
 	-rm -f ./$(DEPDIR)/testfloat_decompress_fastmode1.Po
 	-rm -f ./$(DEPDIR)/testfloat_multidim_comp_decom.Po
@@ -685,7 +699,8 @@ install-ps-am:
 installcheck-am:
 
 maintainer-clean: maintainer-clean-am
-		-rm -f ./$(DEPDIR)/testfloat_OMPThread_SIMD_optimized.Po
+		-rm -f ./$(DEPDIR)/test_profiling.Po
+	-rm -f ./$(DEPDIR)/testfloat_OMPThread_SIMD_optimized.Po
 	-rm -f ./$(DEPDIR)/testfloat_compress_fastmode1.Po
 	-rm -f ./$(DEPDIR)/testfloat_decompress_fastmode1.Po
 	-rm -f ./$(DEPDIR)/testfloat_multidim_comp_decom.Po

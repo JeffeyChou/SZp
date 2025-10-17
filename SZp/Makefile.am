@@ -13,4 +13,4 @@ if OPENMP
 libszp_la_CXXFLAGS+=-fopenmp
 endif
 libszp_la_LDFLAGS = -version-info  1:2:0
-libszp_la_SOURCES=src/szp.cc src/szp_rw.cc src/szp_TypeManager.cc src/szp_CompressionToolkit.cc src/szp_float.cc src/szpd_float.cc src/szp_helper.cc src/szp_double.cc src/szpd_double.cc
+libszp_la_SOURCES = src/szp_CompressionToolkit.cc src/szp_double.cc src/szp_float.cc src/szp_helper.cc src/szp_rw.cc src/szp_TypeManager.cc src/szp.cc src/szpd_double.cc src/szpd_float.cc src/szp_profiling.cc
