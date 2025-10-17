@@ -1568,40 +1568,95 @@ void Jiajun_convertByte2UInt_fast_5b_args_avx2(size_t stepLength, unsigned char 
 #ifdef __AVX2__
     size_t n = 0; // Output index (in uints)
     size_t i = 0; // Input index (in bytes)
-    const size_t simd_out_step = 32; // We produce 32 uints
-    const size_t simd_in_step = 20;  // from 20 bytes (20*8 / 5 = 32)
+    const size_t simd_out_step = 64; // We produce 64 uints per loop
+    const size_t simd_in_step = 40;  // from 40 bytes (40*8 / 5 = 64)
 
+    const __m256i mask_1f = _mm256_set1_epi32(0x1F); // Mask for 5 bits
+
+    // The loop must check if 40 bytes are available for processing.
     while (n + simd_out_step <= stepLength && i + simd_in_step <= byteArrayLength) {
-        __m128i b0 = _mm_loadu_si128((__m128i const *)(byteArray + i));
-        __m128i b1 = _mm_loadl_epi64((__m128i const *)(byteArray + i + 16));
-        __m256i bytes = _mm256_castsi128_si256(b0);
-        bytes = _mm256_inserti128_si256(bytes, b1, 1);
+        // Step 1: Safely load 40 bytes onto the stack. This simplifies gathering.
+        alignas(32) uint8_t bytes[40];
+        memcpy(bytes, byteArray + i, 40);
 
-        alignas(32) unsigned char tmp[32];
-        _mm256_store_si256((__m256i*)tmp, bytes);
+        // Step 2: Build the source vectors directly from the stack array.
+        // _mm256_set_epi32 takes arguments in reverse order (lane 7, 6, ..., 0).
+        __m256i v_b0 = _mm256_set_epi32(bytes[35], bytes[30], bytes[25], bytes[20], bytes[15], bytes[10], bytes[5], bytes[0]);
+        __m256i v_b1 = _mm256_set_epi32(bytes[36], bytes[31], bytes[26], bytes[21], bytes[16], bytes[11], bytes[6], bytes[1]);
+        __m256i v_b2 = _mm256_set_epi32(bytes[37], bytes[32], bytes[27], bytes[22], bytes[17], bytes[12], bytes[7], bytes[2]);
+        __m256i v_b3 = _mm256_set_epi32(bytes[38], bytes[33], bytes[28], bytes[23], bytes[18], bytes[13], bytes[8], bytes[3]);
+        __m256i v_b4 = _mm256_set_epi32(bytes[39], bytes[34], bytes[29], bytes[24], bytes[19], bytes[14], bytes[9], bytes[4]);
 
-        for (int blk = 0; blk < 4; blk++) {
-            const unsigned char *in = tmp + blk * 5;
-            unsigned int *out = intArray + n + blk * 8;
+        // Step 3: Calculate the 8 unpacked values for each of the 8 groups in parallel.
+        // This logic directly mirrors the scalar implementation.
+        __m256i res0 = _mm256_srli_epi32(v_b0, 3);
 
-            out[0] = in[0] >> 3;
-            out[1] = ((in[0] & 0x07) << 2) | (in[1] >> 6);
-            out[2] = (in[1] >> 1) & 0x1F;
-            out[3] = ((in[1] & 0x01) << 4) | (in[2] >> 4);
-            out[4] = ((in[2] & 0x0F) << 1) | (in[3] >> 7);
-            out[5] = (in[3] >> 2) & 0x1F;
-            out[6] = ((in[3] & 0x03) << 3) | (in[4] >> 5);
-            out[7] = in[4] & 0x1F;
-        }
+        __m256i tmp1_a = _mm256_slli_epi32(_mm256_and_si256(v_b0, _mm256_set1_epi32(0x07)), 2);
+        __m256i tmp1_b = _mm256_srli_epi32(v_b1, 6);
+        __m256i res1 = _mm256_or_si256(tmp1_a, tmp1_b);
+
+        __m256i res2 = _mm256_and_si256(_mm256_srli_epi32(v_b1, 1), mask_1f);
+
+        __m256i tmp3_a = _mm256_slli_epi32(_mm256_and_si256(v_b1, _mm256_set1_epi32(0x01)), 4);
+        __m256i tmp3_b = _mm256_srli_epi32(v_b2, 4);
+        __m256i res3 = _mm256_or_si256(tmp3_a, tmp3_b);
+
+        __m256i tmp4_a = _mm256_slli_epi32(_mm256_and_si256(v_b2, _mm256_set1_epi32(0x0F)), 1);
+        __m256i tmp4_b = _mm256_srli_epi32(v_b3, 7);
+        __m256i res4 = _mm256_or_si256(tmp4_a, tmp4_b);
+
+        __m256i res5 = _mm256_and_si256(_mm256_srli_epi32(v_b3, 2), mask_1f);
+
+        __m256i tmp6_a = _mm256_slli_epi32(_mm256_and_si256(v_b3, _mm256_set1_epi32(0x03)), 3);
+        __m256i tmp6_b = _mm256_srli_epi32(v_b4, 5);
+        __m256i res6 = _mm256_or_si256(tmp6_a, tmp6_b);
+
+        __m256i res7 = _mm256_and_si256(v_b4, mask_1f);
+
+        // Step 4: Transpose the 8x8 matrix of results to fix the order.
+        // This is a standard, efficient algorithm for transposing 8x8 32-bit elements in AVX2.
+        __m256i t0, t1, t2, t3, t4, t5, t6, t7;
+        __m256i tt0, tt1, tt2, tt3, tt4, tt5, tt6, tt7;
+
+        t0 = _mm256_unpacklo_epi32(res0, res1); t1 = _mm256_unpackhi_epi32(res0, res1);
+        t2 = _mm256_unpacklo_epi32(res2, res3); t3 = _mm256_unpackhi_epi32(res2, res3);
+        t4 = _mm256_unpacklo_epi32(res4, res5); t5 = _mm256_unpackhi_epi32(res4, res5);
+        t6 = _mm256_unpacklo_epi32(res6, res7); t7 = _mm256_unpackhi_epi32(res6, res7);
+
+        tt0 = _mm256_unpacklo_epi64(t0, t2); tt1 = _mm256_unpackhi_epi64(t0, t2);
+        tt2 = _mm256_unpacklo_epi64(t1, t3); tt3 = _mm256_unpackhi_epi64(t1, t3);
+        tt4 = _mm256_unpacklo_epi64(t4, t6); tt5 = _mm256_unpackhi_epi64(t4, t6);
+        tt6 = _mm256_unpacklo_epi64(t5, t7); tt7 = _mm256_unpackhi_epi64(t5, t7);
+
+        res0 = _mm256_permute2x128_si256(tt0, tt4, 0x20);
+        res1 = _mm256_permute2x128_si256(tt1, tt5, 0x20);
+        res2 = _mm256_permute2x128_si256(tt2, tt6, 0x20);
+        res3 = _mm256_permute2x128_si256(tt3, tt7, 0x20);
+        res4 = _mm256_permute2x128_si256(tt0, tt4, 0x31);
+        res5 = _mm256_permute2x128_si256(tt1, tt5, 0x31);
+        res6 = _mm256_permute2x128_si256(tt2, tt6, 0x31);
+        res7 = _mm256_permute2x128_si256(tt3, tt7, 0x31);
+
+        // Step 5: Store the correctly ordered results.
+        _mm256_storeu_si256((__m256i*)(intArray + n + 0),  res0);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 8),  res1);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 16), res2);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 24), res3);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 32), res4);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 40), res5);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 48), res6);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 56), res7);
 
         n += simd_out_step;
         i += simd_in_step;
     }
 
+    // Handle the remainder with the correct and safe scalar function
     if (n < stepLength) {
         Jiajun_convertByte2UInt_fast_5b_args(stepLength - n, byteArray + i, byteArrayLength - i, intArray + n);
     }
 #else
+    // Fallback if AVX2 is not available
     Jiajun_convertByte2UInt_fast_5b_args(stepLength, byteArray, byteArrayLength, intArray);
 #endif
 }
@@ -1667,37 +1722,64 @@ void Jiajun_convertByte2UInt_fast_6b_args_avx2(size_t stepLength, unsigned char 
 {
 #ifdef __AVX2__
     size_t i = 0, n = 0;
-    const size_t simd_out_step = 32;
-    const size_t simd_in_step = 24;
+    const size_t simd_out_step = 32; // We produce 32 uints per loop
+    const size_t simd_in_step = 24;  // from 24 bytes (24*8 / 6 = 32)
+
+    // Pre-calculate masks
+    const __m256i mask_3f = _mm256_set1_epi32(0x3F); // Mask for 6 bits
+    const __m256i mask_0f = _mm256_set1_epi32(0x0F); // Mask for 4 bits
+    const __m256i mask_03 = _mm256_set1_epi32(0x03); // Mask for 2 bits
 
     while (n + simd_out_step <= stepLength && i + simd_in_step <= byteArrayLength) {
-        __m128i b0 = _mm_loadu_si128((__m128i const *)(byteArray + i));
-        __m128i b1 = _mm_loadl_epi64((__m128i const *)(byteArray + i + 16));
-        __m256i bytes = _mm256_castsi128_si256(b0);
-        bytes = _mm256_inserti128_si256(bytes, b1, 1);
+        // Step 1: Load 24 bytes onto the stack.
+        alignas(32) uint8_t bytes[24];
+        memcpy(bytes, byteArray + i, 24);
 
-        alignas(32) unsigned char tmp[32];
-        _mm256_store_si256((__m256i*)tmp, bytes);
+        // Step 2: Build the source vectors. This part remains correct.
+        __m256i v_b0 = _mm256_set_epi32(bytes[21], bytes[18], bytes[15], bytes[12], bytes[9], bytes[6], bytes[3], bytes[0]);
+        __m256i v_b1 = _mm256_set_epi32(bytes[22], bytes[19], bytes[16], bytes[13], bytes[10], bytes[7], bytes[4], bytes[1]);
+        __m256i v_b2 = _mm256_set_epi32(bytes[23], bytes[20], bytes[17], bytes[14], bytes[11], bytes[8], bytes[5], bytes[2]);
 
-        for (int blk = 0; blk < 8; blk++) {
-            const unsigned char *in = tmp + blk * 3;
-            unsigned int *out = intArray + n + blk * 4;
+        // Step 3: Calculate the 4 unpacked values per group. This part remains correct.
+        __m256i res0 = _mm256_srli_epi32(v_b0, 2);
+        __m256i res1 = _mm256_or_si256(_mm256_slli_epi32(_mm256_and_si256(v_b0, mask_03), 4), _mm256_srli_epi32(v_b1, 4));
+        __m256i res2 = _mm256_or_si256(_mm256_slli_epi32(_mm256_and_si256(v_b1, mask_0f), 2), _mm256_srli_epi32(v_b2, 6));
+        __m256i res3 = _mm256_and_si256(v_b2, mask_3f);
 
-            out[0] = in[0] >> 2;
-            out[1] = ((in[0] & 0x03) << 4) | (in[1] >> 4);
-            out[2] = ((in[1] & 0x0F) << 2) | (in[2] >> 6);
-            out[3] = in[2] & 0x3F;
-        }
+        // --- Step 4: DEFINITIVELY CORRECTED Transpose logic for a 4x8 matrix ---
+        // Intermediate unpacking stage 1: Unpack adjacent pairs
+        __m256i t0 = _mm256_unpacklo_epi32(res0, res1); // [..., r1g1, r0g1, r1g0, r0g0] -> [..., int5, int4, int1, int0]
+        __m256i t1 = _mm256_unpackhi_epi32(res0, res1); // High halves
+        __m256i t2 = _mm256_unpacklo_epi32(res2, res3); // [..., r3g1, r2g1, r3g0, r2g0] -> [..., int7, int6, int3, int2]
+        __m256i t3 = _mm256_unpackhi_epi32(res2, res3); // High halves
 
+        // Intermediate unpacking stage 2: Unpack pairs of pairs to form quads
+        __m256i o0 = _mm256_unpacklo_epi64(t0, t2); // [..., int3, int2, int1, int0]
+        __m256i o1 = _mm256_unpackhi_epi64(t0, t2); // [..., int7, int6, int5, int4]
+        __m256i o2 = _mm256_unpacklo_epi64(t1, t3); // [..., int11, int10, int9, int8]
+        __m256i o3 = _mm256_unpackhi_epi64(t1, t3); // [..., int15, int14, int13, int12]
+        
+        // Final assembly of output vectors by combining 128-bit lanes
+        __m256i out0 = _mm256_permute2x128_si256(o0, o1, 0x20); // [o1_lo | o0_lo] -> [int7..4 | int3..0]
+        __m256i out1 = _mm256_permute2x128_si256(o2, o3, 0x20); // [o3_lo | o2_lo] -> [int15..12 | int11..8]
+        __m256i out2 = _mm256_permute2x128_si256(o0, o1, 0x31); // [o1_hi | o0_hi] -> [int23..20 | int19..16]
+        __m256i out3 = _mm256_permute2x128_si256(o2, o3, 0x31); // [o3_hi | o2_hi] -> [int31..28 | int27..24]
+
+        // Step 5: Store the correctly ordered results.
+        _mm256_storeu_si256((__m256i*)(intArray + n + 0),  out0);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 8),  out1);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 16), out2);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 24), out3);
+        
         n += simd_out_step;
         i += simd_in_step;
     }
 
-	if (n < stepLength) {
-		Jiajun_convertByte2UInt_fast_6b_args(stepLength - n, byteArray + i, byteArrayLength - i, intArray + n);
-	}
+if (n < stepLength) {
+Jiajun_convertByte2UInt_fast_6b_args(stepLength - n, byteArray + i, byteArrayLength - i, intArray + n);
+}
 #else
-	Jiajun_convertByte2UInt_fast_6b_args(stepLength, byteArray, byteArrayLength, intArray);
+Jiajun_convertByte2UInt_fast_6b_args(stepLength, byteArray, byteArrayLength, intArray);
 #endif
 }
 
@@ -1789,26 +1871,87 @@ void Jiajun_convertByte2UInt_fast_7b_args_avx2(size_t stepLength,
 {
 #ifdef __AVX2__
     size_t n = 0, i = 0;
-    const size_t simd_out_step = 8; // We produce 8 uints per loop
-    const size_t simd_in_step = 7;  // from 7 bytes (7*8 / 7 = 8)
+    const size_t simd_out_step = 64; // We produce 64 uints per loop
+    const size_t simd_in_step = 56;  // from 56 bytes (56*8 / 7 = 64)
 
+    // Pre-calculate all necessary masks based on the scalar logic
+    const __m256i mask_7f = _mm256_set1_epi32(0x7F);
+    const __m256i mask_fe = _mm256_set1_epi32(0xFE);
+    const __m256i mask_01 = _mm256_set1_epi32(0x01);
+    const __m256i mask_fc = _mm256_set1_epi32(0xFC);
+    const __m256i mask_03 = _mm256_set1_epi32(0x03);
+    const __m256i mask_f8 = _mm256_set1_epi32(0xF8);
+    const __m256i mask_07 = _mm256_set1_epi32(0x07);
+    const __m256i mask_f0 = _mm256_set1_epi32(0xF0);
+    const __m256i mask_0f = _mm256_set1_epi32(0x0F);
+    const __m256i mask_e0 = _mm256_set1_epi32(0xE0);
+    const __m256i mask_1f = _mm256_set1_epi32(0x1F);
+    const __m256i mask_c0 = _mm256_set1_epi32(0xC0);
+    const __m256i mask_3f = _mm256_set1_epi32(0x3F);
+    const __m256i mask_80 = _mm256_set1_epi32(0x80);
+    
+    // The loop must check if 56 bytes are available for processing.
     while (n + simd_out_step <= stepLength && i + simd_in_step <= byteArrayLength) {
-        unsigned char t0 = byteArray[i++];
-        unsigned char t1 = byteArray[i++];
-        unsigned char t2 = byteArray[i++];
-        unsigned char t3 = byteArray[i++];
-        unsigned char t4 = byteArray[i++];
-        unsigned char t5 = byteArray[i++];
-        unsigned char t6 = byteArray[i++];
+        // Step 1: Safely load 56 bytes onto the stack for easy gathering.
+        alignas(64) uint8_t bytes[56];
+        memcpy(bytes, byteArray + i, 56);
 
-        intArray[n++] = (t0 & 0xFE) >> 1;
-        intArray[n++] = ((t0 & 0x01) << 6) | ((t1 & 0xFC) >> 2);
-        intArray[n++] = ((t1 & 0x03) << 5) | ((t2 & 0xF8) >> 3);
-        intArray[n++] = ((t2 & 0x07) << 4) | ((t3 & 0xF0) >> 4);
-        intArray[n++] = ((t3 & 0x0F) << 3) | ((t4 & 0xE0) >> 5);
-        intArray[n++] = ((t4 & 0x1F) << 2) | ((t5 & 0xC0) >> 6);
-        intArray[n++] = ((t5 & 0x3F) << 1) | ((t6 & 0x80) >> 7);
-        intArray[n++] = t6 & 0x7F;
+        // Step 2: Build the source vectors directly from the stack array.
+        // _mm256_set_epi32 takes arguments in reverse order (lane 7, 6, ..., 0).
+        __m256i v_b0 = _mm256_set_epi32(bytes[49], bytes[42], bytes[35], bytes[28], bytes[21], bytes[14], bytes[7], bytes[0]);
+        __m256i v_b1 = _mm256_set_epi32(bytes[50], bytes[43], bytes[36], bytes[29], bytes[22], bytes[15], bytes[8], bytes[1]);
+        __m256i v_b2 = _mm256_set_epi32(bytes[51], bytes[44], bytes[37], bytes[30], bytes[23], bytes[16], bytes[9], bytes[2]);
+        __m256i v_b3 = _mm256_set_epi32(bytes[52], bytes[45], bytes[38], bytes[31], bytes[24], bytes[17], bytes[10], bytes[3]);
+        __m256i v_b4 = _mm256_set_epi32(bytes[53], bytes[46], bytes[39], bytes[32], bytes[25], bytes[18], bytes[11], bytes[4]);
+        __m256i v_b5 = _mm256_set_epi32(bytes[54], bytes[47], bytes[40], bytes[33], bytes[26], bytes[19], bytes[12], bytes[5]);
+        __m256i v_b6 = _mm256_set_epi32(bytes[55], bytes[48], bytes[41], bytes[34], bytes[27], bytes[20], bytes[13], bytes[6]);
+
+        // Step 3: Calculate the 8 unpacked values for each of the 8 groups in parallel.
+        // This logic directly mirrors the scalar implementation.
+        __m256i res0 = _mm256_srli_epi32(_mm256_and_si256(v_b0, mask_fe), 1);
+        __m256i res1 = _mm256_or_si256(_mm256_slli_epi32(_mm256_and_si256(v_b0, mask_01), 6), _mm256_srli_epi32(_mm256_and_si256(v_b1, mask_fc), 2));
+        __m256i res2 = _mm256_or_si256(_mm256_slli_epi32(_mm256_and_si256(v_b1, mask_03), 5), _mm256_srli_epi32(_mm256_and_si256(v_b2, mask_f8), 3));
+        __m256i res3 = _mm256_or_si256(_mm256_slli_epi32(_mm256_and_si256(v_b2, mask_07), 4), _mm256_srli_epi32(_mm256_and_si256(v_b3, mask_f0), 4));
+        __m256i res4 = _mm256_or_si256(_mm256_slli_epi32(_mm256_and_si256(v_b3, mask_0f), 3), _mm256_srli_epi32(_mm256_and_si256(v_b4, mask_e0), 5));
+        __m256i res5 = _mm256_or_si256(_mm256_slli_epi32(_mm256_and_si256(v_b4, mask_1f), 2), _mm256_srli_epi32(_mm256_and_si256(v_b5, mask_c0), 6));
+        __m256i res6 = _mm256_or_si256(_mm256_slli_epi32(_mm256_and_si256(v_b5, mask_3f), 1), _mm256_srli_epi32(_mm256_and_si256(v_b6, mask_80), 7));
+        __m256i res7 = _mm256_and_si256(v_b6, mask_7f);
+
+        // Step 4: Transpose the 8x8 matrix of results to fix the order.
+        __m256i t0, t1, t2, t3, t4, t5, t6, t7;
+        __m256i tt0, tt1, tt2, tt3, tt4, tt5, tt6, tt7;
+
+        t0 = _mm256_unpacklo_epi32(res0, res1); t1 = _mm256_unpackhi_epi32(res0, res1);
+        t2 = _mm256_unpacklo_epi32(res2, res3); t3 = _mm256_unpackhi_epi32(res2, res3);
+        t4 = _mm256_unpacklo_epi32(res4, res5); t5 = _mm256_unpackhi_epi32(res4, res5);
+        t6 = _mm256_unpacklo_epi32(res6, res7); t7 = _mm256_unpackhi_epi32(res6, res7);
+
+        tt0 = _mm256_unpacklo_epi64(t0, t2); tt1 = _mm256_unpackhi_epi64(t0, t2);
+        tt2 = _mm256_unpacklo_epi64(t1, t3); tt3 = _mm256_unpackhi_epi64(t1, t3);
+        tt4 = _mm256_unpacklo_epi64(t4, t6); tt5 = _mm256_unpackhi_epi64(t4, t6);
+        tt6 = _mm256_unpacklo_epi64(t5, t7); tt7 = _mm256_unpackhi_epi64(t5, t7);
+
+        res0 = _mm256_permute2x128_si256(tt0, tt4, 0x20);
+        res1 = _mm256_permute2x128_si256(tt1, tt5, 0x20);
+        res2 = _mm256_permute2x128_si256(tt2, tt6, 0x20);
+        res3 = _mm256_permute2x128_si256(tt3, tt7, 0x20);
+        res4 = _mm256_permute2x128_si256(tt0, tt4, 0x31);
+        res5 = _mm256_permute2x128_si256(tt1, tt5, 0x31);
+        res6 = _mm256_permute2x128_si256(tt2, tt6, 0x31);
+        res7 = _mm256_permute2x128_si256(tt3, tt7, 0x31);
+
+        // Step 5: Store the correctly ordered results.
+        _mm256_storeu_si256((__m256i*)(intArray + n + 0),  res0);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 8),  res1);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 16), res2);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 24), res3);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 32), res4);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 40), res5);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 48), res6);
+        _mm256_storeu_si256((__m256i*)(intArray + n + 56), res7);
+
+        n += simd_out_step;
+        i += simd_in_step;
     }
 
     // Handle remaining elements with the scalar function
