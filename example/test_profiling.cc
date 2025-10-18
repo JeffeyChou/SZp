@@ -40,8 +40,7 @@ float* read_float_data(const char* filepath, size_t num_elements) {
 
     float* data = (float*)malloc(num_elements * sizeof(float));
     if (!data) {
-        fprintf(stderr, "Error: Memory allocation failed for reading data file.\n",
-                num_elements);
+        fprintf(stderr, "Error: Memory allocation failed for reading data file.\n");
         fclose(file);
         return nullptr;
     }
@@ -81,8 +80,7 @@ double calculate_trimmed_mean(std::vector<double>& data) {
         return std::accumulate(data.begin(), data.end(), 0.0) / data.size();
     }
     std::sort(data.begin(), data.end());
-    size_t trim_count = data.size() * 0.05;
-    if (trim_count == 0) trim_count = 1; // Ensure at least one element is trimmed if possible
+    size_t trim_count = std::max((size_t)1, (size_t)(data.size() * 0.1)); // Trim 10% from each end
 
     double sum = 0.0;
     for (size_t i = trim_count; i < data.size() - trim_count; ++i) {
@@ -107,12 +105,13 @@ void print_statistics(const std::string& name, std::vector<struct szp_prof_data>
             t2.push_back(res.t_pred);
             t3.push_back(res.t_sign_abs_max);
             t4.push_back(res.t_packing);
+            ops4.push_back(static_cast<double>(res.ops_packing));
         } else { // Decompression
             t1.push_back(res.t_unpacking);
             t2.push_back(res.t_sign_restore);
             t3.push_back(res.t_pred_recon);
             t4.push_back(res.t_dequant);
-
+            ops1.push_back(static_cast<double>(res.ops_unpacking));
         }
     }
 
@@ -125,6 +124,8 @@ void print_statistics(const std::string& name, std::vector<struct szp_prof_data>
     size_t avg_ops1 = static_cast<size_t>(calculate_trimmed_mean(ops1));
     size_t avg_ops4 = static_cast<size_t>(calculate_trimmed_mean(ops4));
 
+    ratio1 = static_cast<double>(avg_ops1) / num_elements;
+    ratio4 = static_cast<double>(avg_ops4) / num_elements;
 
 
     printf("\n--- Averaged Statistics for %s ---\n", name.c_str());
@@ -145,18 +146,20 @@ void print_statistics(const std::string& name, std::vector<struct szp_prof_data>
             printf("    - %-23s %.6f s | \n", "Dequantization:", avg_t4);
         }
     } else { // Single-threaded
+        double total_compute = avg_t1 + avg_t2 + avg_t3 + avg_t4;
         printf("  - %-25s %.6f s\n", "Total Time:", avg_total);
         printf("    - %-23s %.6f s (%5.2f%%) |\n", "Allocation:", avg_alloc, avg_total > 0 ? (avg_alloc / avg_total * 100) : 0);
         if (is_compression) {
-            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Quantization:", avg_t1, avg_total > 0 ? (avg_t1 / avg_total * 100) : 0);
-            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Prediction:", avg_t2, avg_total > 0 ? (avg_t2 / avg_total * 100) : 0);
-            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Sign/Abs/Max:", avg_t3, avg_total > 0 ? (avg_t3 / avg_total * 100) : 0);
-            printf("    - %-23s %.6f s (%5.2f%%) | Ops: %-18s (Ratio: %.2f)\n", "Packing:", avg_t4, avg_total > 0 ? (avg_t4 / avg_total * 100) : 0, format_with_commas(avg_ops4).c_str(), ratio4);
+            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Quantization:", avg_t1, total_compute > 0 ? (avg_t1 / total_compute * 100) : 0);
+            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Prediction:", avg_t2, total_compute > 0 ? (avg_t2 / total_compute * 100) : 0);
+            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Sign/Abs/Max:", avg_t3, total_compute > 0 ? (avg_t3 / total_compute * 100) : 0);
+            printf("    - %-23s %.6f s (%5.2f%%) | Ops: %-18s (Ratio: %.2f)\n", "Packing:", avg_t4, total_compute > 0 ? (avg_t4 / total_compute * 100) : 0, format_with_commas(avg_ops4).c_str(), ratio4);
+
         } else {
-            printf("    - %-23s %.6f s (%5.2f%%) | Ops: %-18s (Ratio: %.2f)\n", "Unpacking:", avg_t1, avg_total > 0 ? (avg_t1 / avg_total * 100) : 0, format_with_commas(avg_ops1).c_str(), ratio1);
-            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Sign Restoration:", avg_t2, avg_total > 0 ? (avg_t2 / avg_total * 100) : 0);
-            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Prediction Recon.:", avg_t3, avg_total > 0 ? (avg_t3 / avg_total * 100) : 0);
-            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Dequantization:", avg_t4, avg_total > 0 ? (avg_t4 / avg_total * 100) : 0);
+            printf("    - %-23s %.6f s (%5.2f%%) | Ops: %-18s (Ratio: %.2f)\n", "Unpacking:", avg_t1, total_compute > 0 ? (avg_t1 / total_compute * 100) : 0, format_with_commas(avg_ops1).c_str(), ratio1);
+            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Sign Restoration:", avg_t2, total_compute > 0 ? (avg_t2 / total_compute * 100) : 0);
+            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Prediction Recon.:", avg_t3, total_compute > 0 ? (avg_t3 / total_compute * 100) : 0);
+            printf("    - %-23s %.6f s (%5.2f%%) |\n", "Dequantization:", avg_t4, total_compute > 0 ? (avg_t4 / total_compute * 100) : 0);
         }
     }
 }
@@ -195,7 +198,7 @@ int main(int argc, char *argv[]) {
 
     printf("--- SZP Profiling Test ---\n");
     printf("Data File: %s\n", data_file_path);
-    printf("Elements: %zu\n", num_elements);
+    printf("Elements: %s\n", format_with_commas(num_elements).c_str());
     printf("Error Bound: %.2e\n", abs_err_bound);
     printf("Algorithm Block Size: %d\n", algo_block_size);
     printf("Warmup Runs: %d\n", warmup_runs);
@@ -219,11 +222,22 @@ int main(int argc, char *argv[]) {
     // --- Warmup Phase ---
     printf("\n--- Running %d Warmup Iterations ---\n", warmup_runs);
     for (int i = 0; i < warmup_runs; ++i) {
+        // Original versions
         szp_float_single_thread_arg_profile(compressed_data, original_data, &compressed_size, abs_err_bound, num_elements, algo_block_size);
-        szp_float_decompress_single_thread_arg_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data + sizeof(float));
+        szp_float_decompress_single_thread_arg_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data);
+        
+        // New buffer versions
+        szp_float_single_thread_arg_buffer_profile(compressed_data, original_data, &compressed_size, abs_err_bound, num_elements, algo_block_size);
+        szp_float_decompress_single_thread_arg_buffer_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data);
+
 #ifdef _OPENMP
+        // Original versions
         szp_float_openmp_threadblock_arg_profile(compressed_data, original_data, &compressed_size, abs_err_bound, num_elements, algo_block_size);
-        szp_float_decompress_openmp_threadblock_arg_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data + sizeof(float));
+        szp_float_decompress_openmp_threadblock_arg_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data);
+        
+        // New buffer versions
+        szp_float_openmp_threadblock_arg_buffer_profile(compressed_data, original_data, &compressed_size, abs_err_bound, num_elements, algo_block_size);
+        szp_float_decompress_openmp_threadblock_arg_buffer_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data);
 #endif
     }
     printf("Warmup complete.\n");
@@ -231,42 +245,59 @@ int main(int argc, char *argv[]) {
     // --- Measurement Phase ---
     printf("\n--- Running %d Measurement Repetitions ---\n", repetitions);
     std::vector<struct szp_prof_data> st_comp_results, st_decomp_results, omp_comp_results, omp_decomp_results;
+    std::vector<struct szp_prof_data> st_comp_buffer_results, st_decomp_buffer_results, omp_comp_buffer_results, omp_decomp_buffer_results;
 
     for (int i = 0; i < repetitions; ++i) {
+        // === Original Arg Versions ===
         st_comp_results.push_back(szp_float_single_thread_arg_profile(compressed_data, original_data, &compressed_size, abs_err_bound, num_elements, algo_block_size));
-        st_decomp_results.push_back(szp_float_decompress_single_thread_arg_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data + sizeof(float)));
-        double max_abs_err_st = 0.0;
-        for (size_t j = 0; j < num_elements; ++j) {
-            max_abs_err_st = std::max(max_abs_err_st, (double)fabs(original_data[j] - decompressed_data[j]));
+        st_decomp_results.push_back(szp_float_decompress_single_thread_arg_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data));
+
+        // === New Buffer Versions ===
+        st_comp_buffer_results.push_back(szp_float_single_thread_arg_buffer_profile(compressed_data, original_data, &compressed_size, abs_err_bound, num_elements, algo_block_size));
+        st_decomp_buffer_results.push_back(szp_float_decompress_single_thread_arg_buffer_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data));
+
+        if (i == 0) { // Verify correctness on first run
+            double max_abs_err = 0.0;
+            for (size_t j = 0; j < num_elements; ++j) {
+                max_abs_err = std::max(max_abs_err, (double)fabs(original_data[j] - decompressed_data[j]));
+            }
+            printf("\n--- Intermediate Verification (Single-Thread Rep %d) ---\n", i + 1);
+            printf("  - Max Abs Error: %.6e (Bound: %.2e)\n", max_abs_err, abs_err_bound);
         }
 
 #ifdef _OPENMP
+        // === Original Arg Versions ===
         omp_comp_results.push_back(szp_float_openmp_threadblock_arg_profile(compressed_data, original_data, &compressed_size, abs_err_bound, num_elements, algo_block_size));
-        omp_decomp_results.push_back(szp_float_decompress_openmp_threadblock_arg_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data + sizeof(float)));
-        double max_abs_err_omp = 0.0;
-        for (size_t j = 0; j < num_elements; ++j) {
-            max_abs_err_omp = std::max(max_abs_err_omp, (double)fabs(original_data[j] - decompressed_data[j]));
-        }
-        if (i == 0) { // Print error only on first measurement run to avoid spam
-            printf("\n--- Intermediate Verification (Rep %d) ---\n", i + 1);
-            printf("  - Max Abs Error (Single-Thread): %.6e (Bound: %.2e)\n", max_abs_err_st, abs_err_bound);
-            printf("  - Max Abs Error (OpenMP):        %.6e (Bound: %.2e)\n", max_abs_err_omp, abs_err_bound);
-        }
-#else
-        if (i == 0) { // Print error only on first measurement run to avoid spam
-            printf("\n--- Intermediate Verification (Rep %d) ---\n", i + 1);
-            printf("  - Max Abs Error (Single-Thread): %.6e (Bound: %.2e)\n", max_abs_err_st, abs_err_bound);
+        omp_decomp_results.push_back(szp_float_decompress_openmp_threadblock_arg_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data));
+        
+        // === New Buffer Versions ===
+        omp_comp_buffer_results.push_back(szp_float_openmp_threadblock_arg_buffer_profile(compressed_data, original_data, &compressed_size, abs_err_bound, num_elements, algo_block_size));
+        omp_decomp_buffer_results.push_back(szp_float_decompress_openmp_threadblock_arg_buffer_profile(decompressed_data, num_elements, abs_err_bound, algo_block_size, compressed_data));
+
+        if (i == 0) { // Verify correctness on first run
+            double max_abs_err = 0.0;
+            for (size_t j = 0; j < num_elements; ++j) {
+                max_abs_err = std::max(max_abs_err, (double)fabs(original_data[j] - decompressed_data[j]));
+            }
+            printf("\n--- Intermediate Verification (OpenMP Rep %d) ---\n", i + 1);
+            printf("  - Max Abs Error: %.6e (Bound: %.2e)\n", max_abs_err, abs_err_bound);
         }
 #endif
     }
     printf("Measurements complete.\n");
 
     // --- Analysis and Reporting ---
-    print_statistics("Single-Threaded Compression", st_comp_results, num_elements, true, false);
-    print_statistics("Single-Threaded Decompression", st_decomp_results, num_elements, false, false);
+    print_statistics("Single-Threaded Compression (Original Arg)", st_comp_results, num_elements, true, false);
+    print_statistics("Single-Threaded Compression (Buffer Arg)", st_comp_buffer_results, num_elements, true, false);
+    
+    print_statistics("Single-Threaded Decompression (Original Arg)", st_decomp_results, num_elements, false, false);
+    print_statistics("Single-Threaded Decompression (Buffer Arg)", st_decomp_buffer_results, num_elements, false, false);
 #ifdef _OPENMP
-    print_statistics("OpenMP Compression", omp_comp_results, num_elements, true, true);
-    print_statistics("OpenMP Decompression", omp_decomp_results, num_elements, false, true);
+    print_statistics("OpenMP Compression (Original Arg)", omp_comp_results, num_elements, true, true);
+    print_statistics("OpenMP Compression (Buffer Arg)", omp_comp_buffer_results, num_elements, true, true);
+
+    print_statistics("OpenMP Decompression (Original Arg)", omp_decomp_results, num_elements, false, true);
+    print_statistics("OpenMP Decompression (Buffer Arg)", omp_decomp_buffer_results, num_elements, false, true);
 #endif
 
     // Cleanup
