@@ -195,6 +195,20 @@ struct MethodBenchResult {
 typedef void (*migrated_compress_fn)(unsigned char*, float*, size_t*, float, size_t, int);
 typedef void (*migrated_decompress_fn)(float*, size_t, float, int, unsigned char*);
 
+static void baseline_compress_fn(unsigned char* output, float* original_data,
+                                 size_t* out_size, float abs_err_bound,
+                                 size_t num_elements, int block_size) {
+    szp_float_openmp_threadblock_arg(output, original_data, out_size,
+                                     abs_err_bound, num_elements, block_size);
+}
+
+static void baseline_decompress_fn(float* decompressed_data, size_t num_elements,
+                                   float abs_err_bound, int block_size,
+                                   unsigned char* cmp_bytes) {
+    szp_float_decompress_openmp_threadblock_arg(
+        decompressed_data, num_elements, abs_err_bound, block_size, cmp_bytes);
+}
+
 static double wall_time_seconds() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -427,6 +441,8 @@ static int run_migrated_suite(int argc, char* argv[]) {
     };
 
     const MethodEntry methods[] = {
+        {"Baseline-SZp", baseline_compress_fn,
+         baseline_decompress_fn},
         {"BlockAligned", szp_float_compress_blockaligned,
          szp_float_decompress_blockaligned},
         {"VecBA-3pass", szp_float_compress_vecBlockaligned,
@@ -438,7 +454,7 @@ static int run_migrated_suite(int argc, char* argv[]) {
     std::vector<MethodBenchResult> results;
     results.reserve(sizeof(methods) / sizeof(methods[0]));
 
-    printf("\n--- Migrated ZCCL Method Benchmark ---\n");
+    printf("\n--- Baseline + Migrated ZCCL Method Benchmark ---\n");
     printf("Data File: %s\n", data_file_path);
     printf("Elements: %s\n", format_with_commas(num_elements).c_str());
     printf("Range: [%.6g, %.6g], value_range=%.6g\n", vmin, vmax, value_range);
@@ -492,22 +508,42 @@ static int run_migrated_suite(int argc, char* argv[]) {
                result.max_abs_err, result.max_rel_err, result.psnr);
     }
 
-    bool consistent = true;
-    if (!results.empty()) {
-        const auto& baseline = results.front();
-        const double err_tol =
-            std::max(1e-8, (double)abs_err_bound * 1e-6);
-        const double psnr_tol = 1e-3;
-        const double cr_tol = 1e-9;
+    const double err_tol =
+        std::max(1e-8, (double)abs_err_bound * 1e-6);
+    const double psnr_tol = 1e-3;
+    const double cr_tol = 1e-9;
 
-        printf("\n--- Pairwise Differences (vs %s) ---\n", baseline.name);
+    if (results.size() >= 2) {
+        const auto& baseline = results.front();
+        printf("\n--- Baseline Deltas (vs %s) ---\n", baseline.name);
         for (size_t i = 1; i < results.size(); ++i) {
             const auto& result = results[i];
             double cr_diff =
                 fabs(result.compression_ratio - baseline.compression_ratio);
             double err_diff = fabs(result.max_abs_err - baseline.max_abs_err);
+            double rel_err_diff =
+                fabs(result.max_rel_err - baseline.max_rel_err);
             double psnr_diff = fabs(result.psnr - baseline.psnr);
-            bool same = (result.compressed_size == baseline.compressed_size) &&
+            printf("%-20s size_diff=%zd cr_diff=%.6e abs_diff=%.6e rel_diff=%.6e psnr_diff=%.6e\n",
+                   result.name,
+                   (ptrdiff_t)result.compressed_size -
+                       (ptrdiff_t)baseline.compressed_size,
+                   cr_diff, err_diff, rel_err_diff, psnr_diff);
+        }
+    }
+
+    bool consistent = true;
+    if (results.size() >= 3) {
+        const auto& migrated_ref = results[1];
+        printf("\n--- Migrated Consistency (vs %s) ---\n", migrated_ref.name);
+        for (size_t i = 2; i < results.size(); ++i) {
+            const auto& result = results[i];
+            double cr_diff =
+                fabs(result.compression_ratio - migrated_ref.compression_ratio);
+            double err_diff =
+                fabs(result.max_abs_err - migrated_ref.max_abs_err);
+            double psnr_diff = fabs(result.psnr - migrated_ref.psnr);
+            bool same = (result.compressed_size == migrated_ref.compressed_size) &&
                         cr_diff <= cr_tol && err_diff <= err_tol &&
                         psnr_diff <= psnr_tol;
 
@@ -515,13 +551,13 @@ static int run_migrated_suite(int argc, char* argv[]) {
             printf("%-20s size_diff=%zd cr_diff=%.6e err_diff=%.6e psnr_diff=%.6e %s\n",
                    result.name,
                    (ptrdiff_t)result.compressed_size -
-                       (ptrdiff_t)baseline.compressed_size,
+                       (ptrdiff_t)migrated_ref.compressed_size,
                    cr_diff, err_diff, psnr_diff,
                    same ? "OK" : "DIFF");
         }
     }
 
-    printf("\nMigration metric consistency: %s\n",
+    printf("\nMigrated method consistency: %s\n",
            consistent ? "PASS" : "FAIL");
 
     free(original_data);
