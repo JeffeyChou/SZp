@@ -39,13 +39,6 @@ size_t szp_float_single_thread_arg_buffer(
     unsigned int *__restrict__ temp_predict_arr,
     int *__restrict__ temp_quant_arr);
 
-static size_t szp_float_block_compiler_buffer(
-    unsigned char *__restrict__ block_pointer, const float *__restrict__ op,
-    double inver_bound, size_t current_block_size, int *__restrict__ prior,
-    unsigned char *__restrict__ temp_sign_arr,
-    unsigned int *__restrict__ temp_predict_arr,
-    int *__restrict__ temp_quant_arr);
-
 void szp_float_openmp_threadblock_arg_buffer(unsigned char *output, float *oriData, size_t *outSize, float absErrBound,
                                       size_t nbEle, int blockSize);
 
@@ -54,6 +47,21 @@ void szp_float_single_thread_arg(unsigned char *output, float *oriData, size_t *
 
 size_t szp_float_single_thread_arg_record(unsigned char *output, float *oriData, size_t *outSize, float absErrBound,
                                        size_t nbEle, int blockSize);
+
+void szp_float_compress_blockaligned(unsigned char *output, float *oriData,
+                                     size_t *outSize, float absErrBound,
+                                     size_t nbEle, int blockSize);
+
+void szp_float_compress_vecBlockaligned(unsigned char *output, float *oriData,
+                                        size_t *outSize, float absErrBound,
+                                        size_t nbEle, int blockSize);
+
+void szp_float_compress_vecBlockaligned_singlepass(unsigned char *output,
+                                                   float *oriData,
+                                                   size_t *outSize,
+                                                   float absErrBound,
+                                                   size_t nbEle,
+                                                   int blockSize);
 
 unsigned char *
 szp_float_openmp_threadblock_randomaccess(float *oriData, size_t *outSize, float absErrBound,

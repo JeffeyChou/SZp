@@ -129,6 +129,15 @@ size_t Jiajun_save_fixed_length_bits(unsigned int *unsignintArray, size_t intArr
 	return byteLength;
 }
 
+size_t Jiajun_save_fixed_length_bits_MSB(unsigned int *unsignintArray,
+                                         size_t intArrayLength,
+                                         unsigned char *result,
+                                         unsigned int bit_count)
+{
+    return Jiajun_save_fixed_length_bits(
+        unsignintArray, intArrayLength, result, bit_count);
+}
+
 size_t convertInt2Byte_fast_1b_args(unsigned char *intArray, size_t intArrayLength, unsigned char *result)
 {
 	size_t byteLength = 0;
@@ -190,62 +199,48 @@ static constexpr unsigned char bit_reverse_table[256] = {
     0x0F, 0x8F, 0x4F, 0xCF, 0x2F, 0xAF, 0x6F, 0xEF, 0x1F, 0x9F, 0x5F, 0xDF, 0x3F, 0xBF, 0x7F, 0xFF
 };
 
-size_t Jiajun_convertUInt2Byte_fast_1b_args_avx2(unsigned int *intArray, size_t intArrayLength, unsigned char *result) {
+size_t Jiajun_convertUInt2Byte_fast_1b_args_MSB_SIMD(unsigned int *intArray,
+                                                     size_t intArrayLength,
+                                                     unsigned char *result) {
 #ifdef __AVX2__
-    size_t n = 0; // Input element index
-    size_t i = 0; // Output byte index
-    const size_t simd_step = 32; // Process 32 uints -> 4 bytes
-
-    const __m256i zero = _mm256_setzero_si256();
-    const __m256i mask1 = _mm256_set1_epi32(0x1);
-    const __m256i perm_mask = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
+    size_t n = 0;
+    size_t i = 0;
+    const size_t simd_step = 32;
 
     while (n + simd_step <= intArrayLength) {
-        // Step 1: Load 32 uints
-        __m256i v0 = _mm256_loadu_si256((__m256i*)(intArray + n + 0));
-        __m256i v1 = _mm256_loadu_si256((__m256i*)(intArray + n + 8));
-        __m256i v2 = _mm256_loadu_si256((__m256i*)(intArray + n + 16));
-        __m256i v3 = _mm256_loadu_si256((__m256i*)(intArray + n + 24));
+        __m256i v0 = _mm256_loadu_si256((__m256i *)(intArray + n + 0));
+        __m256i v1 = _mm256_loadu_si256((__m256i *)(intArray + n + 8));
+        __m256i v2 = _mm256_loadu_si256((__m256i *)(intArray + n + 16));
+        __m256i v3 = _mm256_loadu_si256((__m256i *)(intArray + n + 24));
 
-        // Step 2 (FIX #1): Apply the & 1 mask to all 32 integers
-        v0 = _mm256_and_si256(v0, mask1);
-        v1 = _mm256_and_si256(v1, mask1);
-        v2 = _mm256_and_si256(v2, mask1);
-        v3 = _mm256_and_si256(v3, mask1);
+        v0 = _mm256_slli_epi32(v0, 31);
+        v1 = _mm256_slli_epi32(v1, 31);
+        v2 = _mm256_slli_epi32(v2, 31);
+        v3 = _mm256_slli_epi32(v3, 31);
 
-        // Step 3: Pack down to 32 bytes (now guaranteed to be 0 or 1)
-        __m256i p16_0 = _mm256_packus_epi32(v0, v1);
-        __m256i p16_1 = _mm256_packus_epi32(v2, v3);
-        __m256i p8_scrambled = _mm256_packus_epi16(p16_0, p16_1);
+        result[i + 0] = bit_reverse_table[_mm256_movemask_ps(_mm256_castsi256_ps(v0)) & 0xFF];
+        result[i + 1] = bit_reverse_table[_mm256_movemask_ps(_mm256_castsi256_ps(v1)) & 0xFF];
+        result[i + 2] = bit_reverse_table[_mm256_movemask_ps(_mm256_castsi256_ps(v2)) & 0xFF];
+        result[i + 3] = bit_reverse_table[_mm256_movemask_ps(_mm256_castsi256_ps(v3)) & 0xFF];
 
-        // Step 4 (FIX #2): Fix the byte order using the correct permutation
-        __m256i ordered_bytes = _mm256_permutevar8x32_epi32(p8_scrambled, perm_mask);
-
-        // Step 5: Set the MSB of bytes that are 1
-        __m256i msb_set = _mm256_sub_epi8(zero, ordered_bytes);
-
-        // Step 6: Extract the MSB of each of the 32 bytes into a 32-bit integer.
-        uint32_t packed_bits = _mm256_movemask_epi8(msb_set);
-        
-        // Step 7 (FIX #3): The bits in each byte are reversed. Fix them.
-        result[i + 0] = bit_reverse_table[(packed_bits >> 0) & 0xFF];
-        result[i + 1] = bit_reverse_table[(packed_bits >> 8) & 0xFF];
-        result[i + 2] = bit_reverse_table[(packed_bits >> 16) & 0xFF];
-        result[i + 3] = bit_reverse_table[(packed_bits >> 24) & 0xFF];
-        
         n += simd_step;
-        i += 4; // We produced 4 bytes
+        i += 4;
     }
-    
-    // Handle the remainder with the original scalar function
+
     if (n < intArrayLength) {
-        Jiajun_convertUInt2Byte_fast_1b_args(intArray + n, intArrayLength - n, result + i);
+        Jiajun_convertUInt2Byte_fast_1b_args(
+            intArray + n, intArrayLength - n, result + i);
     }
-    
+
     return (intArrayLength + 7) / 8;
 #else
     return Jiajun_convertUInt2Byte_fast_1b_args(intArray, intArrayLength, result);
 #endif
+}
+
+size_t Jiajun_convertUInt2Byte_fast_1b_args_avx2(unsigned int *intArray, size_t intArrayLength, unsigned char *result) {
+    return Jiajun_convertUInt2Byte_fast_1b_args_MSB_SIMD(
+        intArray, intArrayLength, result);
 }
 
 size_t Jiajun_convertUInt2Byte_fast_2b_args(unsigned int *timeStepType, size_t timeStepTypeLength, unsigned char *result)
